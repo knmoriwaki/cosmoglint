@@ -1,0 +1,1 @@
+{"output_dir": "./output/transformer2", "max_length": 30, "use_loss_mono": false, "use_rad": true, "seed": 12345, "data_dir": "./training_data", "train_ratio": 0.9, "batch_size": 512, "num_epochs": 10, "lr": 0.001, "dropout": 0.0, "model_name": "transformer2", "d_model": 128, "num_layers": 4, "num_heads": 8, "num_features_out": 100, "num_features_in": 2, "use_sampler": true}
