@@ -4,5 +4,8 @@ output_test/
 param_files/
 Pinocchio/
 source_c/
+Transformer/__pycache__
+Transformer/output/
 Transformer/TNG_data/
+Transformer/NN/output/
 xxx/
