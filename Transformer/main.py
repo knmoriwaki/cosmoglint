@@ -83,6 +83,7 @@ def main():
     print(model)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-5)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.num_epochs, eta_min=1e-5)
 
     def loss_func(output, target, mask):
         # output: (batch, seq_length, num_features_in, num_features_out)
@@ -141,9 +142,10 @@ def main():
             
             optimizer.zero_grad()
 
-            _, output = model.generate(context, seq=seq, teacher_forcing_ratio=teacher_forcing_ratio) 
+            input_seq = seq[:, :-1]
+            output = model(context, input_seq) # (batch, max_length, num_features_in, num_features_out)
+            #_, output = model.generate(context, seq=seq, teacher_forcing_ratio=teacher_forcing_ratio) 
             # output: (batch, max_length, num_features_in, num_features_out)
-            #output = model(context, input_seq) # (batch, max_length, num_features_in, num_features_out)
             
             loss = loss_func(output, seq, mask)
 
@@ -167,6 +169,8 @@ def main():
         
             with open(fname_log, "a") as f:
                 f.write(f"{loss.item():.4f} {loss_val.item():.4f}\n")
+
+        scheduler.step()
 
     # save model
     fname = f"{args.output_dir}/model.pth"

@@ -1,0 +1,244 @@
+import os
+import sys
+import argparse
+import json
+import copy
+import h5py
+import re
+
+from tqdm import tqdm
+
+import numpy as np
+
+import numpy as np
+
+import torch
+
+def create_mask(array, threshold): # mask for values below threshold
+    _, seq_length = array.shape
+
+    mask_below = array < threshold # (num_halos, max_length)
+    mask_below[:, 0] = False  
+
+    first_below = np.where(mask_below.any(axis=1), mask_below.argmax(axis=1), seq_length)
+    indices = np.arange(seq_length)[None, :]  # (1, max_length)
+    mask = indices < first_below[:, None]  # (num_halos, max_length)
+    return mask
+
+def generate_galaxy_TransNF(args, logm, pos, vel):
+
+    print("# Use Transformer-NF to generate galaxies")
+
+    from Transformer_NF.model import my_model, my_flow_model, generate
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    norm_params = np.loadtxt("./Transformer_NF/norm_params.txt")
+    xmin = norm_params[:,0]
+    xmax = norm_params[:,1]
+
+    ### load Transformer
+    with open(f"{args.model_dir}/args.json", "r") as f:
+        opt = json.load(f, object_hook=lambda d: argparse.Namespace(**d))
+    print("opt: ", opt)
+
+    model = my_model(opt)
+    model.to(device)
+    model.load_state_dict(torch.load(f"{args.model_dir}/model.pth"))
+    model.eval()
+    print(model)
+
+    flow = my_flow_model(opt)
+    flow.to(device)
+    flow.load_state_dict(torch.load(f"{args.model_dir}/flow.pth"))
+    flow.eval()
+    print(flow)
+
+    ### generate galaxies
+    print(f"# Generate galaxies (batch size: {opt.batch_size})")
+    logm = (logm - xmin[0]) / (xmax[0] - xmin[0])
+    logm = torch.from_numpy(logm).float().to(device)
+    
+    num_batch = (len(logm) + opt.batch_size - 1) // opt.batch_size
+    generated = []
+    def stop_criterion(sample):
+        # sample: (batch, num_features)
+        return (sample[:, 0] < 1).all()
+    
+    for batch_idx in tqdm(range(num_batch)):
+        start = batch_idx * opt.batch_size 
+        logm_batch = logm[start: start + opt.batch_size] # (batch_size, 1)
+        generated_batch = generate(model, flow, logm_batch, stop_criterion=stop_criterion) # (batch_size, max_length, num_features)
+        generated.append(generated_batch)
+    generated = torch.cat(generated, dim=0) # (num_halos, max_length, num_features)
+    generated = generated.cpu().detach().numpy()
+
+    ### Select valid galaxies
+    print("# Select valid galaxies")
+
+    # Set mask for selection -- sfr > threshold or central
+    batch, seq_length, num_features = generated.shape
+
+    sfr = generated[:,:,0]
+    sfr = sfr * (xmax[1] - xmin[1]) + xmin[1]
+    sfr = 10 ** sfr # (num_halos, seq_length)
+
+    flag_central = np.zeros_like(sfr, dtype=bool)
+    flag_central[:, 0] = True
+
+    mask = create_mask(sfr, args.threshold) # (num_halos, seq_length)
+
+    # Flatten the arrays
+    mask = mask.reshape(-1) # (num_halos * seq_length, ) 
+    flag_central = flag_central.reshape(-1)
+    pos_central = np.repeat(pos[:,None,:], seq_length, axis=1).reshape(-1, 3) # (num_halos * max_length, 3)
+    vel_central = np.repeat(vel[:,None,:], seq_length, axis=1).reshape(-1, 3) # (num_halos * max_length, 3)
+    generated = generated.reshape(-1, num_features) # (num_halos * max_length, num_features)
+    
+    # Apply mask to arrays
+    flag_central = flag_central[mask] # (num_galaxies_valid, )
+    pos_central = pos_central[mask] # (num_galaxies_valid, 3)
+    vel_central = vel_central[mask] # (num_galaxies_valid, 3)
+    generated = generated[mask] # (num_galaxies_valid, num_features)
+
+    num_gal = len(flag_central)
+    print(f"# Number of valid galaxies: {num_gal}")
+    
+    ### Denormalize
+    generated = generated * (xmax[1:1+num_features] - xmin[1:1+num_features]) + xmin[1:1+num_features]
+    generated[:,0] = 10 ** generated[:,0] 
+    generated[:,1] = 10 ** generated[:,1] 
+    generated[:,2] = np.sign( generated[:,2] ) * (10 ** np.abs( generated[:,2] ) - 1 )   
+    generated[:,3] = 10 ** generated[:,3] 
+
+    return generated, pos_central, vel_central, flag_central
+
+def generate_galaxy(args, logm, pos, vel):
+
+    print("# Use Transformer to generate SFR")
+
+    from Transformer.model import my_model
+    from Transformer.NN.model import my_NN_model 
+    from Transformer.NF.model import my_flow_model
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    norm_params = np.loadtxt("./Transformer/norm_params.txt")
+    xmin = norm_params[:,0]
+    xmax = norm_params[:,1]
+
+    ### load Transformer
+    with open(f"{args.model_dir}/args.json", "r") as f:
+        opt = json.load(f, object_hook=lambda d: argparse.Namespace(**d))
+    print("opt: ", opt)
+
+    model = my_model(opt)
+    model.to(device)
+
+    model.load_state_dict(torch.load(f"{args.model_dir}/model.pth"))
+    model.eval()
+    print(model)
+
+    ### generate SFR
+    print(f"# Generate SFR (batch size: {opt.batch_size})")
+    logm = (logm - xmin[0]) / (xmax[0] - xmin[0])
+    logm = torch.from_numpy(logm).float().to(device)
+    
+    num_batch = (len(logm) + opt.batch_size - 1) // opt.batch_size
+    generated = []
+    for batch_idx in tqdm(range(num_batch)):
+        start = batch_idx * opt.batch_size 
+        logm_batch = logm[start: start + opt.batch_size] # (batch_size, 1)
+        with torch.no_grad():
+            generated_batch, _ = model.generate(logm_batch)
+        generated.append(generated_batch)
+    generated = torch.cat(generated, dim=0) # (num_halos, seq_length, 1)
+
+    ### Select valid galaxies
+    print("# Select valid galaxies")
+
+    # Set mask for selection
+    batch, seq_length, num_features_out = generated.shape
+
+    sfr = generated[:,:,0].cpu().detach().numpy()
+    sfr = sfr * (xmax[1] - xmin[1]) + xmin[1]
+    sfr = 10 ** sfr # (num_halos, seq_length)
+
+    flag_central = np.zeros_like(sfr, dtype=bool)
+    flag_central[:, 0] = True
+
+    mask_below = sfr < args.threshold # (num_halos, seq_length)
+    mask_below[:, 0] = False  
+
+    first_below = np.where(mask_below.any(axis=1), mask_below.argmax(axis=1), seq_length)
+    indices = np.arange(seq_length)[None, :]  # (1, seq_length)
+    mask = indices < first_below[:, None]  # (num_halos, seq_length)
+
+    # Flatten the arrays
+    mask = mask.reshape(-1) # (num_halos * seq_length, ) 
+    flag_central = flag_central.reshape(-1)
+    pos_central = np.repeat(pos[:,None,:], seq_length, axis=1).reshape(-1, 3) # (num_halos * seq_length, 3)
+    vel_central = np.repeat(vel[:,None,:], seq_length, axis=1).reshape(-1, 3) # (num_halos * seq_length, 3)
+    sfr = sfr.reshape(-1) # (num_halos * seq_length, )
+
+    # Flatten torch tensor
+    logm_seq = logm[:,None,None].expand(-1, seq_length, 1).contiguous().view(-1, 1) # (num_halos * seq_length, 1)
+    generated = generated.view(-1, num_features_out) # (num_halos * seq_length, 1)
+    x_NN = torch.cat([logm_seq, generated], dim=-1) # (num_halos * seq_length, 2)
+
+    # Apply mask to arrays
+    flag_central = flag_central[mask] # (num_galaxies_valid, )
+    pos_central = pos_central[mask] # (num_galaxies_valid, 3)
+    vel_central = vel_central[mask] # (num_galaxies_valid, 3)
+    sfr = sfr[mask] # (num_galaxies_valid, )
+    
+    # Apply mask to tensor
+    mask = torch.from_numpy(mask).to(device)
+    x_NN = x_NN[mask] # (num_galaxies_valid, 2)
+
+    num_gal = len(x_NN)
+    print(f"# Number of valid galaxies: {num_gal}")
+    
+    ### Load NN
+    with open(f"{args.NN_model_dir}/args.json", "r") as f:
+        opt_NN = json.load(f, object_hook=lambda d: argparse.Namespace(**d))
+    print("opt_NN: ", opt_NN)
+
+    if "NN" in args.NN_model_dir:
+        model_NN = my_NN_model(opt_NN)
+    else:
+        model_NN = my_flow_model(opt_NN)
+
+    model_NN.to(device)
+    model_NN.load_state_dict(torch.load(f"{args.NN_model_dir}/model.pth"))
+    model_NN.eval()
+    print(model_NN)
+
+    ### Generate other properties
+    print(f"# Generate other properties (batch size: {opt_NN.batch_size})")
+    num_batch = (num_gal + opt_NN.batch_size - 1) // opt_NN.batch_size
+    generated_NN = []
+    for batch_idx in tqdm(range(num_batch)):
+        start = batch_idx * opt_NN.batch_size 
+        x_NN_batch = x_NN[start: start + opt_NN.batch_size] # (batch_size, num_features_out)
+        with torch.no_grad():
+            if "NN" in args.NN_model_dir:
+                generated_NN_batch, _ = model_NN.generate(x_NN_batch) # (batch_size, num_features_out)
+            else:
+                generated_NN_batch = model_NN.sample(1, x_NN_batch) # (batch_size, 1, num_features_out)
+                generated_NN_batch = generated_NN_batch.squeeze(1) # (batch_size, num_features_out)
+
+        generated_NN.append(generated_NN_batch)
+
+    generated_NN = torch.cat(generated_NN, dim=0) # (num_galaxies_valid, num_features_out)
+    generated_NN = generated_NN.cpu().detach().numpy()
+    generated_NN = generated_NN * (xmax[2:2+opt_NN.num_features_out] - xmin[2:2+opt_NN.num_features_out]) + xmin[2:2+opt_NN.num_features_out]
+
+    generated_NN[:,0] = 10 ** generated_NN[:,0] # (num_galaxies_valid, )
+    generated_NN[:,1] = np.sign( generated_NN[:,1] ) * (10 ** np.abs( generated_NN[:,1] ) - 1 ) # (num_galaxies_valid, )    
+    generated_NN[:,2] = 10 ** generated_NN[:,2] # (num_galaxies_valid, )
+
+    generated = np.concatenate([sfr[:,None], generated_NN], axis=1) # (num_galaxies_valid, num_features_out)
+
+    return generated, pos_central, vel_central, flag_central
+
+
+    

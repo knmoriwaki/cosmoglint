@@ -8,4 +8,7 @@ Transformer/__pycache__
 Transformer/output/
 Transformer/TNG_data/
 Transformer/NN/output/
+Transformer/NF/output/
+Transformer_NF/TNG_data/
+Transformer_NF/output/
 xxx/
