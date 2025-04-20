@@ -14,6 +14,8 @@ import numpy as np
 
 import torch
 
+
+
 def create_mask(array, threshold): # mask for values below threshold
     _, seq_length = array.shape
 

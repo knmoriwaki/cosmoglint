@@ -442,11 +442,18 @@ def my_flow_model(args):
         transforms.append(RandomPermutation(args.num_features))
         
     transform = CompositeTransform(transforms)
-    #base_dist = StandardNormal(shape=[args.num_features_out])
-    base_dist = ConditionalDiagonalNormal(shape=[args.num_features], context_encoder=nn.Linear(args.num_features_in, out_features=4))
-    #base_dist = MADEMoG(features=args.num_features, hidden_features=16, context_features=args.num_features_in, num_mixture_components=2)
-    #base_dist = BimodalNormal(shape=[args.num_features], offset=2.0)
-    #base_dist = ContextualBimodalBase(context_dim=args.num_context, latent_dim=args.num_features, hidden_dim=args.hidden_dim)
+    if args.base_dist == "gaussian":
+        base_dist = StandardNormal(shape=[args.num_features])
+    elif args.base_dist == "conditional_gaussian":
+        base_dist = ConditionalDiagonalNormal(shape=[args.num_features], context_encoder=nn.Linear(args.num_context, out_features=4))
+    elif args.base_dist == "mixture":
+        base_dist = MADEMoG(features=args.num_features, hidden_features=16, context_features=args.num_context, num_mixture_components=2)
+    elif args.base_dist == "bimodal":
+        base_dist = BimodalNormal(shape=[args.num_features], offset=2.0)
+    elif args.base_dist == "conditional_bimodal":
+        base_dist = ContextualBimodalBase(context_dim=args.num_context, latent_dim=args.num_features, hidden_dim=args.hidden_dim)
+    else:
+        raise ValueError(f"Invalid base distribution: {args.base_dist}")
     flow = Flow(transform, base_dist)
 
     return flow

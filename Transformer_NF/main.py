@@ -3,6 +3,8 @@ import sys
 import argparse
 import json
 
+from tqdm import tqdm
+
 import numpy as np
 
 import torch
@@ -17,9 +19,11 @@ from model import my_model, my_flow_model, output_log_prob
 parser = argparse.ArgumentParser()
 
 # base parameters
+parser.add_argument("--gpu_id", type=int, default=0)
 parser.add_argument("--output_dir", type=str, default="output")
 parser.add_argument("--max_length", type=int, default=30)
 parser.add_argument("--use_dist", action="store_true")
+parser.add_argument("--use_vel", action="store_true")
 parser.add_argument("--seed", type=int, default=12345)
 
 # training parameters
@@ -40,6 +44,7 @@ parser.add_argument("--d_model", type=int, default=128, help="hidden dimension o
 parser.add_argument("--num_layers", type=int, default=4, help="number of transformer layers")
 parser.add_argument("--num_heads", type=int, default=8, help="number of attention heads")
 
+parser.add_argument("--base_dist", type=str, default="gaussian", help="base distribution")
 parser.add_argument("--num_context", type=int, default=4, help="number of context features")
 parser.add_argument("--hidden_dim", type=int, default=64, help="hidden dimension of flow") 
 parser.add_argument("--num_flows", type=int, default=4, help="number of flows")
@@ -47,13 +52,6 @@ parser.add_argument("--num_flows", type=int, default=4, help="number of flows")
 
 args = parser.parse_args()
 
-def my_save_model(model, fname):
-    torch.save(model.state_dict(), fname)
-    print(f"# Model saved to {fname}")
-
-def my_load_model(model, fname):
-    model.load_state_dict(torch.load(fname))
-    print(f"# Model loaded from {fname}")
 
 def main():
 
@@ -62,11 +60,11 @@ def main():
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device(f"cuda:{args.gpu_id}" if torch.cuda.is_available() else "cpu")
 
     ### Load data
     norm_params = np.loadtxt("./norm_params.txt")
-    dataset = MyDataset(args.data_dir, max_length=args.max_length, norm_params=norm_params, use_dist=args.use_dist)
+    dataset = MyDataset(args.data_dir, max_length=args.max_length, norm_params=norm_params, use_dist=args.use_dist, use_vel=args.use_vel)
     train_size = int(args.train_ratio * len(dataset))
     val_size = len(dataset) - train_size
     train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
@@ -119,7 +117,7 @@ def main():
     optimizer = torch.optim.Adam(params, lr=args.lr, weight_decay=1e-5)
 
     #scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.num_epochs, eta_min=1e-5, last_epoch=args.load_epoch-1)
-    scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.9, last_epoch=args.load_epoch-1)
+    scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.95, last_epoch=args.load_epoch-1)
 
     fname_log = f"{args.output_dir}/log.txt"
     mode = "a" if args.load_epoch > 0 else "w"
@@ -127,7 +125,8 @@ def main():
         f.write(f"#epoch loss loss_val\n")
 
     num_batches = len(train_dataloader)
-    for epoch in range(args.num_epochs):
+    #for epoch in range(args.num_epochs):
+    for epoch in tqdm(range(args.num_epochs)):
         model.train()
 
         count = 0
@@ -137,14 +136,14 @@ def main():
             for condition_val, seq_val, mask_val in val_dataloader:
                 with torch.no_grad():
                     log_prob_val = output_log_prob(model, flow, condition_val, seq_val, mask_val)
-                    loss_val = -log_prob_val.mean()
+                    loss_val = - log_prob_val.mean() / args.num_features
                     break # show one batch result only
 
             model.train()
             optimizer.zero_grad()
             
             log_prob = output_log_prob(model, flow, condition, seq, mask)
-            loss = -log_prob.mean()            
+            loss = - log_prob.mean() / args.num_features     
 
             loss.backward()
             optimizer.step()
@@ -154,18 +153,17 @@ def main():
                 epoch_now += args.load_epoch
             with open(fname_log, "a") as f:
                 f.write(f"{epoch_now:.4f} {loss.item():.4f} {loss_val.item():.4f}\n")
-            print(f"{epoch_now:.4f} {loss.item():.4f} {loss_val.item():.4f}")
-
+            
             count += 1
 
+        #tqdm.write(f"{epoch_now:.4f} {loss.item():.4f} {loss_val.item():.4f}")
         scheduler.step()
 
 
-        if epoch + 1 == args.num_epochs:
+        if epoch + 1 == args.num_epochs or (epoch + 1) % args.save_freq == 0:
             my_save_model(model, f"{args.output_dir}/model.pth")
             my_save_model(flow, f"{args.output_dir}/flow.pth")
 
-        if (epoch + 1) % args.save_freq == 0:
             epoch_now = epoch + 1
             if args.load_epoch > 0:
                 epoch_now += args.load_epoch
