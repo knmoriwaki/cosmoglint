@@ -114,7 +114,7 @@ def generate_galaxy_TransNF(args, logm, pos, vel):
 
     return generated, pos_central, vel_central, flag_central
 
-def generate_galaxy(args, logm, pos, vel):
+def generate_galaxy_two_step(args, logm, pos, vel):
 
     print("# Use Transformer to generate SFR")
 
@@ -244,3 +244,87 @@ def generate_galaxy(args, logm, pos, vel):
 
 
     
+
+def generate_galaxy(args, logm, pos, vel):
+
+    print("# Use Transformer to generate SFR")
+
+    from Transformer.model import my_model
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    norm_params = np.loadtxt("./Transformer/norm_params.txt")
+    xmin = norm_params[:,0]
+    xmax = norm_params[:,1]
+
+    ### load Transformer
+    with open(f"{args.model_dir}/args.json", "r") as f:
+        opt = json.load(f, object_hook=lambda d: argparse.Namespace(**d))
+    print("opt: ", opt)
+
+    model = my_model(opt)
+    model.to(device)
+
+    model.load_state_dict(torch.load(f"{args.model_dir}/model.pth"))
+    model.eval()
+    print(model)
+
+    ### generate galaxies
+    print(f"# Generate galaxies (batch size: {opt.batch_size})")
+    logm = (logm - xmin[0]) / (xmax[0] - xmin[0])
+    logm = torch.from_numpy(logm).float().to(device)
+    
+    num_batch = (len(logm) + opt.batch_size - 1) // opt.batch_size
+    generated = []
+    for batch_idx in tqdm(range(num_batch)):
+        start = batch_idx * opt.batch_size 
+        logm_batch = logm[start: start + opt.batch_size] # (batch_size, num_features)
+        with torch.no_grad():
+            generated_batch, _ = model.generate(logm_batch)
+        generated.append(generated_batch)
+    generated = torch.cat(generated, dim=0) # (num_halos, seq_length, num_features)
+
+    ### Select valid galaxies
+    print("# Select valid galaxies")
+
+    # Set mask for selection
+    batch, seq_length, num_features = generated.shape
+
+    generated = generated.cpu().detach().numpy()
+    generated = generated * (xmax[1:1+num_features] - xmin[1:1+num_features]) + xmin[1:1+num_features]
+
+    sfr = generated[:,:,0]
+    sfr = 10 ** sfr # (num_halos, seq_length)
+
+    flag_central = np.zeros_like(sfr, dtype=bool)
+    flag_central[:, 0] = True
+
+    mask_below = sfr < args.threshold # (num_halos, seq_length)
+    mask_below[:, 0] = False  
+
+    first_below = np.where(mask_below.any(axis=1), mask_below.argmax(axis=1), seq_length)
+    indices = np.arange(seq_length)[None, :]  # (1, seq_length)
+    mask = indices < first_below[:, None]  # (num_halos, seq_length)
+
+    # Flatten the arrays
+    mask = mask.reshape(-1) # (num_halos * seq_length, ) 
+    flag_central = flag_central.reshape(-1)
+    pos_central = np.repeat(pos[:,None,:], seq_length, axis=1).reshape(-1, 3) # (num_halos * seq_length, 3)
+    vel_central = np.repeat(vel[:,None,:], seq_length, axis=1).reshape(-1, 3) # (num_halos * seq_length, 3)
+    generated = generated.reshape(-1, num_features) # (num_halos * seq_length, num_features)
+
+    # Apply mask to arrays
+    flag_central = flag_central[mask] # (num_galaxies_valid, )
+    pos_central = pos_central[mask] # (num_galaxies_valid, 3)
+    vel_central = vel_central[mask] # (num_galaxies_valid, 3)
+    generated = generated[mask] # (num_galaxies_valid, num_features)
+
+    for i in range(num_features):
+        if i == 2:
+            generated[:,i] = np.sign( generated[:,i] ) * (10 ** np.abs( generated[:,i] ) - 1 )
+        else:
+            generated[:,i] = 10 ** generated[:,i]
+    
+    print(f"# Number of valid galaxies: {len(generated)}")
+    
+    return generated, pos_central, vel_central, flag_central
+
