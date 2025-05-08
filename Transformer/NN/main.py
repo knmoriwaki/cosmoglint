@@ -43,6 +43,7 @@ def main():
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+    ### Load data
     norm_params = np.loadtxt("../norm_params.txt")
 
     dataset = MyDataset(args.data_dir, norm_params=norm_params)
@@ -73,9 +74,20 @@ def main():
     args.num_features_in = dataset.x.shape[1]
     args.num_features_out = dataset.y.shape[1]
 
+    ### load model
     model = my_NN_model(args)
     model.to(device)
     print(model)
+
+    ### Save arguments 
+
+    args.norm_params = norm_params.tolist()
+    fname = f"{args.output_dir}/args.json"
+    with open(fname, "w") as f:
+        json.dump(vars(args), f)
+    print(f"# Arguments saved to {fname}")
+
+    ### Training 
 
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-5)
 
@@ -92,6 +104,7 @@ def main():
 
         loss = -log_prob[torch.arange(output.size(0)), x_bin, y_bin].mean() 
         return loss
+    
 
     fname_log = f"{args.output_dir}/log.txt"
 
@@ -148,13 +161,6 @@ def main():
             for i in range(args.batch_size):
                 f.write(f"{context_val[i].item()} {seq_val[i,0].item()} {output_val[i,0].item()}\n")
     """
-
-    args.norm_params = norm_params.tolist()
-    fname = f"{args.output_dir}/args.json"
-    with open(fname, "w") as f:
-        json.dump(vars(args), f)
-    print(f"# Arguments saved to {fname}")
-
 
 if __name__ == "__main__":
     main()

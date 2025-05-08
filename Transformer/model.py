@@ -62,12 +62,12 @@ class TransformerBase(nn.Module):
         mask = mask.masked_fill(mask==1, float('-inf'))
         return mask
     
-    def _set_to_value(self, x, mask, value=0.0):
-        zero_tensor = torch.tensor(value).to(x.device)
+    def _set_to_zero(self, x, mask):
+        zero_tensor = torch.tensor(0.0).to(x.device)
         return torch.where(mask, zero_tensor, x)
 
     
-    def generate(self, context, seq=None, teacher_forcing_ratio=0.0, temperature=1.0, stop_criterion=None, prob_threshold=None):
+    def generate(self, context, seq=None, teacher_forcing_ratio=0.0, temperature=1.0, stop_criterion=None, prob_threshold=0):
         # context: (batch, num_condition)
         batch_size = len(context)
 
@@ -95,28 +95,29 @@ class TransformerBase(nn.Module):
                 else:
                     x_last = x_last / temperature
                     
-                    if prob_threshold is not None:
-                        x_last = self._set_to_value(x_last, x_last < prob_threshold) # strictly set the probability to zero if less than prob_threshold
+                    x_last = self._set_to_zero(x_last, x_last < prob_threshold) # set the probability to zero if less than prob_threshold
 
                     mask_all_batch = torch.ones(batch_size, dtype=torch.bool).to(context.device)
 
                     if t > 0:
-                        if self.num_features_in > 1:
-                            x_last[:, 1, 0] = self._set_to_value(x_last[:,1,0], mask_all_batch)  # Set the probability of minimum bin to zero when sampling -- otherwise zero distance is sampled even for satellite galaxies with non-zero sfr 
-                        if self.num_features_in > 3:
-                            x_last[:, 3, 0] = self._set_to_value(x_last[:,3,0], mask_all_batch)
-                    
+                        # Set the probability of minimum bin to zero when sampling -- otherwise zero distance is sampled even for satellite galaxies with non-zero sfr 
+                        for iparam in range(1, self.num_features_in):
+                            if self.num_features_in > iparam:
+                                mask = (x_last[:, 1, 1:] >= prob_threshold).any(axis=1)
+                                mask = mask & mask_all_batch
+                                x_last[:, iparam, 0] = self._set_to_zero(x_last[:,iparam,0], mask) 
+                        
                     x_last = x_last.reshape(-1, self.num_features_out) # (batch * num_features_in, num_features_out)
                     bin_indices = Categorical(probs=x_last).sample().float().view(-1, self.num_features_in) # (batch, num_features_in)
                     uniform_noise = torch.rand_like(bin_indices, device=context.device)  # (batch, num_features_in)
                     next_token = (bin_indices + uniform_noise) / self.num_features_out  # (batch, num_features_in)
 
-                    next_token[:, 0] = self._set_to_value(next_token[:, 0], next_token[:,0] < 1./ self.num_features_out) # strictly set the sfr to zero if sfr is less than 1/num_features_out 
+                    next_token[:, 0] = self._set_to_zero(next_token[:, 0], next_token[:,0] < 1./ self.num_features_out) # strictly set the sfr to zero if sfr is less than 1/num_features_out 
                     if t == 0:
                         if self.num_features_in > 1:
-                            next_token[:, 1] = self._set_to_value(next_token[:, 1], mask_all_batch) # strictly set the distance to zero for central
+                            next_token[:, 1] = self._set_to_zero(next_token[:, 1], mask_all_batch) # Set the distance to zero for central
                         if self.num_features_in > 2:
-                            next_token[:, 2] = self._set_to_value(next_token[:, 2], mask_all_batch, value=0.5) # strictly set the radial velocity to zero (i.e., 0.5 after normalization) for central
+                            next_token[:, 2] = 0.5 + self._set_to_zero(next_token[:, 2], mask_all_batch) # Set the radial velocity to zero (i.e., 0.5 after normalization) for central
 
             generated[:, t, :] = next_token # (batch, num_features_in)           
             #generated = torch.cat([generated, next_token], dim=1)

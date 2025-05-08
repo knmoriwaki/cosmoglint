@@ -28,7 +28,7 @@ parser.add_argument("--use_dist", action="store_true")
 parser.add_argument("--use_vel", action="store_true")
 
 # training parameters
-parser.add_argument("--data_dir", type=str, default="TNG_data")
+parser.add_argument("--data_path", type=str, default="TNG_data/TNG300-1_38.h5")
 parser.add_argument("--train_ratio", type=float, default=0.9)
 parser.add_argument("--batch_size", type=int, default=128)
 parser.add_argument("--num_epochs", type=int, default=2)
@@ -57,7 +57,7 @@ def main():
 
     ### Load data
     norm_params = np.loadtxt("./norm_params.txt")
-    dataset = MyDataset(args.data_dir, max_length=args.max_length, norm_params=norm_params, use_dist=args.use_dist, use_vel=args.use_vel)
+    dataset = MyDataset(args.data_path, max_length=args.max_length, norm_params=norm_params, use_dist=args.use_dist, use_vel=args.use_vel)
     train_size = int(args.train_ratio * len(dataset))
     val_size = len(dataset) - train_size
     train_dataset, val_dataset = random_split(dataset, [train_size, val_size])

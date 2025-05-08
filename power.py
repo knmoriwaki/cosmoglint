@@ -136,39 +136,23 @@ import numpy as np
 import warnings
 
 def cylindrical_average(field, coords, nbins, log_bins=False, use_same_bins=False):
-    """
-    3次元データ field (Nx, Ny, Nz) および各軸の座標 coords = [x, y, z] 
-    に対し、横平面の距離 r = sqrt(x^2+y^2) と z = |z| による2次元ビニングを行い、
-    各ビン内の平均と分散を求める関数。
-
-    Parameters:
-      field    : 3次元の実数型配列 (Nx,Ny,Nz)
-      coords   : 各軸の座標情報のリスト [x, y, z] (それぞれ (Nx,), (Ny,), (Nz,))
-      nbins    : 各軸方向のビン数（出力は (nbins, nbins) となる）
-      log_bins : 横軸・縦軸ともに対数ビンにする場合は True (初期値 False)
-
-    Returns:
-      mean     : 各ビン内の平均値 (nbins, nbins)
-      bins_r   : r 軸のビンエッジ配列 (nbins+1,)
-      bins_z   : z 軸のビンエッジ配列 (nbins+1,)
-      var      : 各ビン内の不偏分散 (nbins, nbins)
-    """
 
     # 入力チェック：fieldが3次元、coordsが3個の1次元配列であること
     if field.ndim != 3 or len(coords) != 3:
-        raise ValueError("field は3次元、coords は3つの軸情報のリストである必要があります。")
+        raise ValueError("field must be 3D and coords must be a list of 3 1D arrays.")
 
     # 各軸の座標グリッドを生成 (indexing='ij' を指定して元のshapeに合わせる)
     X, Y, Z = np.meshgrid(coords[0], coords[1], coords[2], indexing='ij')
 
-    # 新たな座標値の計算
-    r_values = np.sqrt(X**2 + Y**2)
-    z_values = np.abs(Z)
+    r_coords = np.sqrt(X**2 + Y**2)
+    z_coords = np.abs(Z)
 
-        
     # binning
-    z_min, z_max = z_values.min(), z_values.max()
-    r_min, r_max = r_values.min(), r_values.max()    
+    z_min, z_max = z_coords.min(), z_coords.max()
+    r_min, r_max = r_coords.min(), r_coords.max() 
+    if log_bins:
+        z_min = z_coords[z_coords > 0].min()
+        r_min = r_coords[r_coords > 0].min()   
     if use_same_bins:
         z_min = min(z_min, r_min)
         z_max = max(z_max, r_max)
@@ -178,65 +162,49 @@ def cylindrical_average(field, coords, nbins, log_bins=False, use_same_bins=Fals
     if not log_bins:
         bins_z = np.linspace(z_min, z_max, nbins + 1)
     else:
-        z_positive = z_values[z_values > 0]
-        z_min_nonzero = z_positive.min()
-        bins_z = np.logspace(np.log10(z_min_nonzero), np.log10(z_max), nbins + 1)
+        bins_z = np.logspace(np.log10(z_min), np.log10(z_max), nbins + 1)
     
     if not log_bins:
         bins_r = np.linspace(r_min, r_max, nbins + 1)
     else:
-        r_positive = r_values[r_values > 0]
-        r_min_nonzero = r_positive.min()
-        bins_r = np.logspace(np.log10(r_min_nonzero), np.log10(r_max), nbins + 1)
-
-    # --- 各画素のビン番号の決定 ---
-    # flatten して1次元配列として扱う
-    r_flat = r_values.flatten()
-    z_flat = z_values.flatten()
-    field_flat = np.real(field.flatten())
+        bins_r = np.logspace(np.log10(r_min), np.log10(r_max), nbins + 1)
 
     # digitize は1始まりのインデックスを返す（ビン範囲外の値は 0 または nbins+1）
-    indx_r = np.digitize(r_flat, bins_r)
-    indx_z = np.digitize(z_flat, bins_z)
+    indx_r = np.digitize(r_coords.flatten(), bins_r)
+    indx_z = np.digitize(z_coords.flatten(), bins_z)
 
     # 有効なビン内の値のみを抽出 (indx 1～nbinsに属するもの)
     valid = (indx_r >= 1) & (indx_r <= nbins) & (indx_z >= 1) & (indx_z <= nbins)
     # 0-based に変換: 各軸ともに -1 する
-    valid_r = indx_r[valid] - 1  
-    valid_z = indx_z[valid] - 1
+    indx_r = indx_r[valid] - 1  
+    indx_z = indx_z[valid] - 1
 
     # 2次元のビン番号を一意にするために、合成インデックスを作成
-    combined_idx = valid_r + nbins * valid_z
+    combined_idx = indx_r + nbins * indx_z
 
     # --- 各ビンに含まれる画素数の算出 ---
-    counts = np.bincount(combined_idx, minlength=nbins * nbins)
-    counts = counts.reshape((nbins, nbins))
-    if np.any(counts == 0):
-        warnings.warn("一部のビンに画素が存在しません。nbins を減らすか座標範囲を見直してください。")
+    sumweights = np.bincount(combined_idx, minlength=nbins * nbins)
+    sumweights = sumweights.reshape((nbins, nbins))
+    if np.any(sumweights == 0):
+        warnings.warn("One or more radial bins had no cell within it. Use a smaller nbins.")
+    if np.any(sumweights == 1):
+        print("Warning: one or more radial bins have only one cell within it. This would result in inf in the variance")
 
-    # --- 各ビンの field 値の総和を計算 ---
+    field_flat = field.flatten()
     sum_field = np.bincount(combined_idx, weights=field_flat[valid], minlength=nbins * nbins)
     sum_field = sum_field.reshape((nbins, nbins))
-
-    # --- 各ビン内の平均値の計算 ---
-    mean = np.empty((nbins, nbins))
-    # 画素が存在するビンについては平均計算、無いところは NaN
-    mean[counts > 0] = sum_field[counts > 0] / counts[counts > 0]
-    mean[counts == 0] = np.nan
+    mean = sum_field / sumweights
 
     # --- 分散の計算 ---
     # 各有効画素について、そのビンの平均値との差の二乗を計算
     # まず，flatten した2次元平均値（合成したときの順番で）から，各画素に対応する平均を lookup する
     average_arr = mean.flatten()  # shape (nbins*nbins,)
-    pixel_means = average_arr[combined_idx]
-    diff2 = (field_flat[valid] - pixel_means) ** 2
-    sum_diff2 = np.bincount(combined_idx, weights=diff2, minlength=nbins * nbins)
-    sum_diff2 = sum_diff2.reshape((nbins, nbins))
-    var = np.empty((nbins, nbins))
-    # 画素数が2以上のビンで不偏分散（ddof=1）を算出し、そうでなければ NaN
-    var[counts > 1] = sum_diff2[counts > 1] / (counts[counts > 1] - 1)
-    var[counts <= 1] = np.nan
-
+    averaged_field = average_arr[combined_idx] 
+    var_field = (field_flat[valid] - averaged_field) ** 2
+    var = np.bincount(combined_idx, weights=var_field, minlength=nbins * nbins)
+    var = var.reshape((nbins, nbins))
+    var = var / (sumweights - 1)  
+     
     return mean, bins_r, bins_z, var
 
 
