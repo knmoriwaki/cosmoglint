@@ -17,7 +17,7 @@ def my_load_model(model, fname):
     model.load_state_dict(torch.load(fname))
     print(f"# Model loaded from {fname}")
 
-def load_halo_data(data_dir, max_length=10, norm_params=None, ndata=None, use_dist=False, use_vel=False, sort=True):
+def load_halo_data(file_path, max_length=10, norm_params=None, ndata=None, use_dist=False, use_vel=False, sort=True):
     if norm_params is None:
         xmin, xmax = np.zeros(5), np.ones(5)
     else:
@@ -30,14 +30,11 @@ def load_halo_data(data_dir, max_length=10, norm_params=None, ndata=None, use_di
         log_val = np.full_like(val, val_min)
         mask = val > 10**val_min
         log_val[mask] = np.log10(val[mask])
-        return log_val
+        return log_val, mask
 
     def convert_to_log_with_sign(val):
-        return np.sign(val) * np.log10(np.abs(val) + 1)
-    
-    def normalize(val, val_min, val_max):
-        return (val - val_min) / (val_max - val_min)
-    
+        return np.sign(val) * np.log10(np.abs(val) + 1), None
+        
     def load_values(f, key, min_val, max_val):
         try:
             data = f[key][:]
@@ -45,21 +42,18 @@ def load_halo_data(data_dir, max_length=10, norm_params=None, ndata=None, use_di
                 data *= 1e10 / f.attrs["Hubble"]
                         
             if key == "SubgroupVrad":
-                data = convert_to_log_with_sign(data)
+                data, mask = convert_to_log_with_sign(data)
             else:
-                data = convert_to_log(data, min_val)
+                data, mask = convert_to_log(data, min_val)
             
-            data = normalize(data, min_val, max_val)
-
-            mask = data > 0
+            data = ( data - min_val ) / ( max_val - min_val )
             
             return data, mask
         except KeyError:
             print(f"Key '{key}' not found in the file.")
             return None, None
 
-    snapshot_number = 38
-    file_path = os.path.join(data_dir, f"TNG300-1_{snapshot_number}.h5")
+    print(f"# Loading halo data from {file_path}")
     with h5py.File(file_path, "r") as f:
         mass, mask = load_values(f, "HaloMass", xmin[0], xmax[0])
         sfr, _ = load_values(f, "SubgroupSFR", xmin[1], xmax[1])
@@ -105,9 +99,9 @@ def load_halo_data(data_dir, max_length=10, norm_params=None, ndata=None, use_di
     return mass, y_list
 
 class MyDataset(Dataset):
-    def __init__(self, data_dir, max_length=10, norm_params=None, ndata=None, use_dist=False, use_vel=False, sort=True):
+    def __init__(self, path, max_length=10, norm_params=None, ndata=None, use_dist=False, use_vel=False, sort=True):
         
-        self.x, self.y = load_halo_data(data_dir, max_length=max_length, norm_params=norm_params, ndata=ndata, use_dist=use_dist, use_vel=use_vel, sort=sort)
+        self.x, self.y = load_halo_data(path, max_length=max_length, norm_params=norm_params, ndata=ndata, use_dist=use_dist, use_vel=use_vel, sort=sort)
 
         _, num_params = (self.y[0]).shape
 

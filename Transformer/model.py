@@ -2,21 +2,12 @@ import os
 import argparse
 
 import random
-import numpy as np
-
-import h5py
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-
-from torch.utils.data import Dataset, DataLoader
-from torch.utils.data import random_split
 
 from torch.distributions import Beta, Categorical
 
-from sparsemax import Sparsemax
-    
 def my_model(args):
     
     if "transformer" in args.model_name:
