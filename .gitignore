@@ -1,14 +1,14 @@
 __pycache__/
 figures/
-output_test/
+output_test*/
 param_files/
 Pinocchio/
 source_c/
 Transformer/__pycache__
-Transformer/output/
+Transformer/output*/
 Transformer/TNG_data/
 Transformer/NN/output/
-Transformer/NF/output/
+Transformer/NF/output*/
 Transformer_NF/TNG_data/
 Transformer_NF/output/
 xxx/
