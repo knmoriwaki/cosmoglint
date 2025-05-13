@@ -15,7 +15,7 @@ The following software packages are additionally needed for running Pinocchio
 
 ## Training 
 
-Put training data at [`data_path`] and run the following.
+Put training data at `[data_path]` and run the following.
 ```
 cd Transformer
 python3 main.py --data_path [data_path] --use_dist --use_vel
@@ -26,6 +26,7 @@ The data should be a hdf5 file that contains the following properties of halos:
 - `HaloMass` 
 - `NumSubgroups` 
 - `Offset` 
+
 and the following properties of galaxies:
 - `SubgroupSFR` 
 - `SubgroupDist` 
@@ -40,7 +41,7 @@ Use `Transformer/plot.ipynb`.
 
 ## Create mock data
 
-Put a halo catalog at [`input_fname`] and the trained model at [`model_dir`] and run the following.
+Put a halo catalog at `[input_fname]` and the trained model at `[model_dir]` and run the following.
 ```
 python3 create_data_cube.py --input_fname [input_fname] --model_dir [model_dir]
 ```
