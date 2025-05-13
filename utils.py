@@ -20,9 +20,9 @@ def save_catalog_data(pos_list, value, args, output_fname):
 
     with open(output_fname, 'w') as f:
         for i, v in enumerate(value):
-            f.write(f"{pos_list[0][0]} {pos_list[0][1]} ")
+            f.write(f"{pos_list[0][i, 0]} {pos_list[0][i, 1]} ")
             for pos in pos_list:
-                f.write(f"{pos[2]} ")
+                f.write(f"{pos[i, 2]} ")
 
             f.write(f"{v}\n")
 
@@ -69,7 +69,7 @@ def generate_galaxy_TransNF(args, logm, pos, vel):
     print("# Use Transformer-NF to generate galaxies")
 
     from Transformer_NF.model import my_model, my_flow_model, generate
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda:{}".format(args.gpu_id) if torch.cuda.is_available() else "cpu")
 
     ### load Transformer
     with open(f"{args.model_dir}/args.json", "r") as f:
@@ -160,7 +160,7 @@ def generate_galaxy_two_step(args, logm, pos, vel):
     from Transformer.model import my_model
     from Transformer.NN.model import my_NN_model 
     from Transformer.NF.model import my_flow_model
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda:{}".format(args.gpu_id) if torch.cuda.is_available() else "cpu")
 
     ### load Transformer
     with open(f"{args.model_dir}/args.json", "r") as f:
@@ -284,7 +284,7 @@ def generate_galaxy(args, logm, pos, vel):
     print("# Use Transformer to generate SFR")
 
     from Transformer.model import my_model
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda:{}".format(args.gpu_id) if torch.cuda.is_available() else "cpu")
 
     ### load Transformer
     with open(f"{args.model_dir}/args.json", "r") as f:

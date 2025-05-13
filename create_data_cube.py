@@ -26,27 +26,31 @@ micron = 1e-4 # [cm]
 
 parser = argparse.ArgumentParser()
 
-parser.add_argumnet("--seed", type=int, default=12345)
+parser.add_argument("--seed", type=int, default=12345)
+parser.add_argument("--gpu_id", type=int, default=0, help="GPU ID to use")
+
+### I/O parameters
 parser.add_argument("--input_fname", type=str, default="./Pinocchio/output/pinocchio.r01000.plc.out")
 parser.add_argument("--output_fname", type=str, default="test.h5")
 
 parser.add_argument("--boxsize", type=float, default=100.0)
-parser.add_argument("--lambda_start", type=float, default=1300.0)
+
+### Output format parameters
 parser.add_argument("--npix", type=int, default=100)
 parser.add_argument("--npix_z", type=int, default=90)
 
 parser.add_argument("--redshift_space", action="store_true", default=False, help="Use redshift space")
 parser.add_argument("--gen_both", action="store_true", default=False, help="Generate both real and redshift space data")
 
-parser.add_argument("--logm_min", type=float, default=11.0, help="Minimum log mass")
-parser.add_argument("--threshold", type=float, default=0.1, help="Threshold for SFR")
-
-parser.add_argument("--model_dir", type=str, default=None, help="The directory of the model. If not given, use 4th column as intensity.")
-parser.add_argument("--NN_model_dir", type=str, default=None, help="The directory of the NN model. If not given, use 4th column as intensity.") 
-
 parser.add_argument("--gen_catalog", action="store_true", default=False, help="Generate a catalog of galaxies")
 parser.add_argument("--catalog_threshold", type=float, default=10, help="Threshold for SFR in the catalog")
 
+parser.add_argument("--logm_min", type=float, default=11.0, help="Minimum log mass")
+parser.add_argument("--threshold", type=float, default=0.1, help="Threshold for SFR")
+
+### Generative model parameters (not used when using the original values in simulation data)
+parser.add_argument("--model_dir", type=str, default=None, help="The directory of the model. If not given, use 4th column as intensity.")
+parser.add_argument("--NN_model_dir", type=str, default=None, help="The directory of the NN model. If not given, use 4th column as intensity.") 
 parser.add_argument("--mass_correction_factor", type=float, default=1.0, help="Mass correction factor")
 
 args = parser.parse_args()
@@ -212,7 +216,7 @@ else:
         save_catalog_data(pos_valid, sfr_valid, args, args.output_fname)
 
     else:
-        print("# Assign galaxies int pixels")
+        print("# Assign galaxies to pixels")
 
         intensities = []
         for pos in pos_list:
