@@ -2,6 +2,9 @@
 
 A Python package of generative models for line intensity mapping (LIM) experiments. 
 
+A pre-trained model trained with TNG300-1 data at z = 2 as well as example inputs for training and mock creation are available at [Google Drive](https://drive.google.com/drive/folders/1HRkRdfti8XaIPyF3er5QJmFX3WXCmAQI?usp=sharing).
+
+
 ---
 
 ## Installation
@@ -61,9 +64,5 @@ Example Jupyter notebooks are available in the `notebooks/` directory:
 - `plot_transformer.ipynb`: visualize training results
 - `plot_mock.ipynb`: visualize created mock data
 
-
-## Pre-trained model
-
-The pre-trained model trained with TNG300-1 data at z = 2 and an example input are available at [Google Drive](https://drive.google.com/drive/folders/1HRkRdfti8XaIPyF3er5QJmFX3WXCmAQI?usp=sharing).
 
 ## Citation
