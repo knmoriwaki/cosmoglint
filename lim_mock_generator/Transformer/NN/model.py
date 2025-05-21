@@ -127,9 +127,7 @@ class JointDensityEstimator2D(nn.Module):  # num_features_out should be 2
         y2 = ( j.float() + dj ) / self.output_dim
 
         return torch.stack([y1, y2], dim=1), out.view(-1, self.output_dim, self.output_dim)
-
-
-
+    
 class NeuralNet(nn.Module): 
     def __init__(self, num_features_in=2, num_features_out=2, hidden_dim=64, output_dim=32, dropout=0):
         super().__init__()

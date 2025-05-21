@@ -10,11 +10,9 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader, WeightedRandomSampler
 from torch.utils.data import random_split
-from torch.distributions import Beta
-import torch.nn.functional as F
 
-from utils import MyDataset
-from model import my_model, my_flow_model, output_log_prob
+from utils import MyDataset, my_load_model, my_save_model
+from model import my_model, my_flow_model, my_stop_predictor, calculate_loss
 
 parser = argparse.ArgumentParser()
 
@@ -44,11 +42,14 @@ parser.add_argument("--d_model", type=int, default=128, help="hidden dimension o
 parser.add_argument("--num_layers", type=int, default=4, help="number of transformer layers")
 parser.add_argument("--num_heads", type=int, default=8, help="number of attention heads")
 
-parser.add_argument("--base_dist", type=str, default="gaussian", help="base distribution")
+parser.add_argument("--base_dist", type=str, default="normal", help="base distribution")
 parser.add_argument("--num_context", type=int, default=4, help="number of context features")
 parser.add_argument("--hidden_dim", type=int, default=64, help="hidden dimension of flow") 
 parser.add_argument("--num_flows", type=int, default=4, help="number of flows")
 
+parser.add_argument("--lambda_stop", type=float, default=1, help="weight for stop prediction loss")
+parser.add_argument("--hidden_dim_stop", type=int, default=64, help="hidden dimension of stop predictor")
+parser.add_argument("--verbose", action="store_true", help="verbose mode")
 
 args = parser.parse_args()
 
@@ -95,15 +96,21 @@ def main():
     ### Load model
     model = my_model(args)
     flow = my_flow_model(args)
+    #stop_predictor = my_stop_predictor(args)
 
     if args.load_epoch > 0:
         my_load_model(model, f"{args.output_dir}/model_ep{args.load_epoch}.pth")
         my_load_model(flow, f"{args.output_dir}/flow_ep{args.load_epoch}.pth")
+        #my_load_model(stop_predictor, f"{args.output_dir}/stop_predictor_ep{args.load_epoch}.pth")
 
     model.to(device)
-    print(model)
     flow.to(device)
-    print(model)
+    #stop_predictor.to(device)
+
+    if args.verbose:
+        print(model)
+        print(flow)
+        #print(stop_predictor)
 
     ### Save arguments
     args.norm_params = norm_params.tolist()
@@ -113,11 +120,9 @@ def main():
     print(f"# Arguments saved to {fname}")
 
     ### Training
-    params = list(model.parameters()) + list(flow.parameters())
-    optimizer = torch.optim.Adam(params, lr=args.lr, weight_decay=1e-5)
-
-    #scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.num_epochs, eta_min=1e-5, last_epoch=args.load_epoch-1)
-    scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.95, last_epoch=args.load_epoch-1)
+    params = list(model.parameters()) + list(flow.parameters()) # + list(stop_predictor.parameters())
+    optimizer = torch.optim.Adam(params, lr=args.lr, weight_decay=1e-3)
+    scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.99, last_epoch=args.load_epoch-1)
 
     fname_log = f"{args.output_dir}/log.txt"
     mode = "a" if args.load_epoch > 0 else "w"
@@ -125,25 +130,26 @@ def main():
         f.write(f"#epoch loss loss_val\n")
 
     num_batches = len(train_dataloader)
-    #for epoch in range(args.num_epochs):
     for epoch in tqdm(range(args.num_epochs)):
         model.train()
 
         count = 0
-        for condition, seq, mask in train_dataloader:
+        for condition, seq, mask, stop in train_dataloader:
 
             model.eval() # val evaluation first for ActNorm in flow
-            for condition_val, seq_val, mask_val in val_dataloader:
+            for condition_val, seq_val, mask_val, stop_val in val_dataloader:
                 with torch.no_grad():
-                    log_prob_val = output_log_prob(model, flow, condition_val, seq_val, mask_val)
-                    loss_val = - log_prob_val.mean() / args.num_features
+                    #loss_val, loss_stop_val = calculate_loss(model, flow, condition_val, seq_val, mask_val, stop=stop_val, stop_predictor=stop_predictor)
+                    #loss_val += args.lambda_stop * loss_stop_val
+                    loss_val = calculate_loss(model, flow, condition_val, seq_val, mask_val)
                     break # show one batch result only
 
             model.train()
             optimizer.zero_grad()
             
-            log_prob = output_log_prob(model, flow, condition, seq, mask)
-            loss = - log_prob.mean() / args.num_features     
+            #loss, loss_stop = calculate_loss(model, flow, stop_predictor, condition, seq, mask, stop)
+            #loss += args.lambda_stop * loss_stop
+            loss = calculate_loss(model, flow, condition, seq, mask)
 
             loss.backward()
             optimizer.step()
@@ -153,22 +159,24 @@ def main():
                 epoch_now += args.load_epoch
             with open(fname_log, "a") as f:
                 f.write(f"{epoch_now:.4f} {loss.item():.4f} {loss_val.item():.4f}\n")
+
+            #tqdm.write(f"{epoch_now:.4f} {loss.item():.4f} {(args.lambda_stop*loss_stop).item():.4f} {loss_val.item():.4f} {(args.lambda_stop*loss_stop_val).item():.4f}")
             
             count += 1
 
-        #tqdm.write(f"{epoch_now:.4f} {loss.item():.4f} {loss_val.item():.4f}")
         scheduler.step()
-
 
         if epoch + 1 == args.num_epochs or (epoch + 1) % args.save_freq == 0:
             my_save_model(model, f"{args.output_dir}/model.pth")
             my_save_model(flow, f"{args.output_dir}/flow.pth")
+            #my_save_model(stop_predictor, f"{args.output_dir}/stop_predictor.pth")
 
             epoch_now = epoch + 1
             if args.load_epoch > 0:
                 epoch_now += args.load_epoch
             my_save_model(model, f"{args.output_dir}/model_ep{epoch_now}.pth")
             my_save_model(flow, f"{args.output_dir}/flow_ep{epoch_now}.pth")
+            #my_save_model(stop_predictor, f"{args.output_dir}/stop_predictor_ep{epoch_now}.pth")
     
 if __name__ == "__main__":
     main()

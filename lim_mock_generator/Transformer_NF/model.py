@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-def output_log_prob(transformer, flow, condition, seq, mask):
+def calculate_loss(transformer, flow, condition, seq, mask, stop=None, stop_predictor=None):
     device = next(transformer.parameters()).device
     condition = condition.to(device)
     seq = seq.to(device)
@@ -21,29 +21,54 @@ def output_log_prob(transformer, flow, condition, seq, mask):
     context_for_flow = output.reshape(-1, num_context)[mask]  # flow context (num_galaxies, num_context)
     target_for_flow = seq.reshape(-1, num_features)[mask] # flow target (num_galaxies, num_features)
     log_prob = flow.log_prob(target_for_flow, context=context_for_flow)
+    loss = - log_prob.mean() / num_features
 
-    return log_prob
+    if stop is not None and stop_predictor is not None:
+        stop = stop.to(device) # (batch, max_length)
+        stop = stop.reshape(-1)[mask] # (num_galaxies,)
+        stop_pred = stop_predictor(context_for_flow)
+        loss_stop = torch.nn.BCELoss()(stop_pred, stop)  # (num_galaxies,)
+        return loss, loss_stop
+    else:
+        return loss
 
-
-def generate(transformer, flow, x_cond, stop_criterion=None):
+def generate(transformer, flow, x_cond, stop_predictor=None, stop_threshold=None):
     transformer.eval()
     flow.eval()
+    if stop_predictor is not None:
+        stop_predictor.eval()
 
     batch_size = len(x_cond)
     max_length = transformer.max_length
     num_features = transformer.num_features_in
 
     x_seq = torch.zeros(batch_size, max_length, num_features).to(x_cond.device)
+    stop_flags = torch.zeros(batch_size, dtype=torch.bool).to(x_cond.device)
 
     for t in range(max_length):
         with torch.no_grad():
             context = transformer(x_cond, x_seq[:,:t,:]) # (batch, t+1, num_context)
             context = context[:, -1, :] # (batch, num_context)
             sample = flow.sample(1, context) # (batch, 1, num_features)
-        x_seq[:, t, :] = sample.squeeze(1)
+            x_seq[:, t, :] = sample.squeeze(1)
+               
+            if stop_predictor is not None:  
+                stop_prob = stop_predictor(context) # (batch, )
+                stop_now = stop_prob > stop_threshold
+                stop_flags |= stop_now
+            
+            elif stop_threshold is not None:
+                if t > 0:
+                    stop_now = x_seq[:,t,0] < stop_threshold # (batch, )
+                    stop_flags |= stop_now
 
-        if stop_criterion is not None:
-            if stop_criterion(x_seq[:, t, :]):
+            if t == 0:
+                if num_features > 1:
+                    x_seq[:,0,1] = torch.randn(batch_size).to(x_cond.device) * 1e-3 # Random distance for central
+                if num_features > 2:
+                    x_seq[:,0,2] = torch.randn(batch_size).to(x_cond.device) * 1e-3
+            
+            if stop_flags.all():
                 break
 
     return x_seq
@@ -70,6 +95,25 @@ def my_model(args):
 
     return model
 
+def my_stop_predictor(args):
+    return StopPredictor(context_dim=args.num_context, hidden_dim=args.hidden_dim_stop)
+
+
+class StopPredictor(nn.Module):
+    def __init__(self, context_dim, hidden_dim=64):
+        super().__init__()
+        self.layers = nn.Sequential(
+            nn.Linear(context_dim, hidden_dim),
+            nn.LeakyReLU(),
+            nn.Linear(hidden_dim, 1),
+            nn.Sigmoid()
+        )
+    
+    def forward(self, context):
+        x = self.layers(context)
+        return x.squeeze(-1)  # (batch_size,) in [0, 1]
+
+
 class TransformerBase(nn.Module):
     def __init__(self, num_condition=1, d_model=128, num_layers=4, num_heads=8, max_length=10, num_features_in=1, num_features_out=1, dropout=0):
         super().__init__()
@@ -91,20 +135,22 @@ class Transformer1(TransformerBase): # add logM at first in the sequence
     def __init__(self, num_condition=1, d_model=128, num_layers=4, num_heads=8, max_length=10, num_features_in=1, num_features_out=1, dropout=0):
         super().__init__(num_condition=num_condition, d_model=d_model, num_layers=num_layers, num_heads=num_heads, max_length=max_length, num_features_in=num_features_in, num_features_out=num_features_out, dropout=dropout)
 
+        _d_model = d_model - 1
+
         self.embedding_layers = nn.Sequential(
-            nn.Linear(num_features_in, d_model),
+            nn.Linear(num_features_in, _d_model),
             nn.LeakyReLU(),
             nn.Dropout(dropout),
-            nn.Linear(d_model, d_model),
+            nn.Linear(_d_model, _d_model),
         ) 
         self.context_embedding_layers = nn.Sequential(
-            nn.Linear(num_condition, d_model),
+            nn.Linear(num_condition, _d_model),
             nn.LeakyReLU(),
             nn.Dropout(dropout),
-            nn.Linear(d_model, d_model),
+            nn.Linear(_d_model, _d_model),
         )
 
-        self.pos_embedding = nn.Parameter(torch.randn(max_length, d_model))
+        self.pos_embedding = nn.Parameter(torch.randn(1, max_length, 1))
 
         decoder_layer = nn.TransformerDecoderLayer(d_model=d_model, nhead=num_heads, batch_first=True, dropout=dropout)
         self.decoder = nn.TransformerDecoder(decoder_layer, num_layers=num_layers)
@@ -124,19 +170,20 @@ class Transformer1(TransformerBase): # add logM at first in the sequence
         context = context.view(batch_size, 1, -1) # (batch, 1, num_condition)
         for layer in self.context_embedding_layers:
             context = layer(context)  
-        # context: (batch, 1, d_model)
+        # context: (batch, 1, d_model - 1)
 
         for layer in self.embedding_layers:
             x = layer(x)
-        x = torch.cat([context, x], dim=1)  # (batch, seq_length + 1, d_model)
+        x = torch.cat([context, x], dim=1)  # (batch, seq_length + 1, d_model - 1)
         
-        # add position embedding
-        x = x + self.pos_embedding[:total_seq_length, :].unsqueeze(0) # (batch, seq_length + 1, d_model)
+        # cat position embedding
+        position = self.pos_embedding[:,:total_seq_length, :].expand(batch_size, -1, -1) # (batch, seq_length + 1, 1)
+        x = torch.cat([x, position], dim=2)  # (batch, seq_length + 1, d_model + 1)
 
         # decode
         causal_mask = self.generate_square_subsequent_mask(total_seq_length).to(x.device)
         dummy_memory = torch.zeros(batch_size, 1, self.d_model, device=x.device)
-        x = self.decoder(x, memory=dummy_memory, tgt_mask=causal_mask)  # (batch, seq_length + 1, d_model)
+        x = self.decoder(x, memory=dummy_memory, tgt_mask=causal_mask)  # (batch, seq_length + 1, d_model + 1)
     
         # output layer
         x = self.output_layer(x)  # (batch, seq_length + 1, num_features_out)
@@ -300,7 +347,7 @@ class Transformer3WithAttn(Transformer3):
 
 
 from nflows.flows import Flow
-from nflows.distributions import StandardNormal, ConditionalDiagonalNormal, MADEMoG
+from nflows.distributions import StandardNormal, ConditionalDiagonalNormal
 from nflows.transforms import CompositeTransform, RandomPermutation, AffineCouplingTransform, ActNorm, PiecewiseRationalQuadraticCDF
 from nflows.nn.nets import ResidualNet
 from nflows.utils import torchutils
@@ -365,7 +412,7 @@ class BimodalNormal(StandardNormal):
         else:
             return context.new_zeros(context.shape[0], *self._shape)
 
-class ContextualBimodalBase(nn.Module):
+class ConditionalBimodal(nn.Module):
     def __init__(self, context_dim, latent_dim, hidden_dim=64):
         super().__init__()
         self.latent_dim = latent_dim
@@ -418,7 +465,7 @@ class ContextualBimodalBase(nn.Module):
         """
         dist = self.get_distribution(context)
         return dist.log_prob(x)
-
+    
 
 def my_flow_model(args):
     transforms = []
@@ -442,16 +489,21 @@ def my_flow_model(args):
         transforms.append(RandomPermutation(args.num_features))
         
     transform = CompositeTransform(transforms)
-    if args.base_dist == "gaussian":
+    
+    if args.base_dist == "normal":
         base_dist = StandardNormal(shape=[args.num_features])
-    elif args.base_dist == "conditional_gaussian":
-        base_dist = ConditionalDiagonalNormal(shape=[args.num_features], context_encoder=nn.Linear(args.num_context, out_features=4))
-    elif args.base_dist == "mixture":
-        base_dist = MADEMoG(features=args.num_features, hidden_features=16, context_features=args.num_context, num_mixture_components=2)
+    elif args.base_dist == "conditional_normal":
+        base_dist = ConditionalDiagonalNormal(shape=[args.num_features], 
+            context_encoder=nn.Sequential(nn.Linear(args.num_context, args.hidden_dim), 
+                                          nn.LeakyReLU(), 
+                                          nn.Linear(args.hidden_dim, 2 * args.num_features)
+            )
+        )
+
     elif args.base_dist == "bimodal":
         base_dist = BimodalNormal(shape=[args.num_features], offset=2.0)
     elif args.base_dist == "conditional_bimodal":
-        base_dist = ContextualBimodalBase(context_dim=args.num_context, latent_dim=args.num_features, hidden_dim=args.hidden_dim)
+        base_dist = ConditionalBimodal(context_dim=args.num_context, latent_dim=args.num_features, hidden_dim=args.hidden_dim)
     else:
         raise ValueError(f"Invalid base distribution: {args.base_dist}")
     flow = Flow(transform, base_dist)

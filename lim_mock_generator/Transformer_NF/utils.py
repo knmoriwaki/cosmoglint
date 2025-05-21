@@ -17,7 +17,7 @@ def my_load_model(model, fname):
     model.load_state_dict(torch.load(fname))
     print(f"# Model loaded from {fname}")
 
-def load_halo_data(data_dir, max_length=10, norm_params=None, ndata=None, use_numpy=False, use_dist=False, use_vel=False):
+def load_halo_data(data_dir, max_length=10, norm_params=None, ndata=None, use_dist=False, use_vel=False, sort=True):
     if norm_params is None:
         xmin, xmax = np.zeros(5), np.ones(5)
     else:
@@ -43,14 +43,16 @@ def load_halo_data(data_dir, max_length=10, norm_params=None, ndata=None, use_nu
             data = f[key][:]
             if key == "HaloMass":
                 data *= 1e10 / f.attrs["Hubble"]
-            
-            mask = data > 10 ** min_val
+                        
             if key == "SubgroupVrad":
                 data = convert_to_log_with_sign(data)
             else:
                 data = convert_to_log(data, min_val)
+            
             data = normalize(data, min_val, max_val)
 
+            mask = data > 0
+            
             return data, mask
         except KeyError:
             print(f"Key '{key}' not found in the file.")
@@ -71,26 +73,30 @@ def load_halo_data(data_dir, max_length=10, norm_params=None, ndata=None, use_nu
         offset = f["Offset"][:]
         
         for j in range(len(mass)):
+            if not mask[j]:
+                continue
+
             start = offset[j]
             end = start + num_subgroups[j]
-            if use_dist and use_vel:
+            if use_vel:
                 y_j = np.stack([sfr[start:end], dist[start:end], vrad[start:end], vtan[start:end]], axis=1) # (num_subgroups, 2)
             elif use_dist:
                 y_j = np.stack([sfr[start:end], dist[start:end]], axis=1)
-            elif use_vel:
-                y_j = np.stack([sfr[start:end], vrad[start:end], vtan[start:end]], axis=1)
             else:
                 y_j = sfr[start:end, None] # (num_subgroups, 1)
 
-            if not use_numpy:
-                y_j = torch.tensor(y_j, dtype=torch.float32)
+            if sort:
+                # Sort by sfr
+                sorted_indices = [0] + sorted(range(1, len(y_j)), key=lambda k: y_j[k,0], reverse=True)
+                y_j = y_j[sorted_indices]
 
             y_j = y_j[:max_length] # truncate
+            y_j = torch.tensor(y_j, dtype=torch.float32)
             y_list.append(y_j)
             
-        y_list = [ y_list[i] for i in range(len(y_list)) if mask[i] ]
-
     mass = mass[mask]
+    mass = torch.tensor(mass, dtype=torch.float32)
+    mass = mass.unsqueeze(1) # (N, 1)
 
     if ndata is not None:
         mass = mass[:ndata]
@@ -99,26 +105,31 @@ def load_halo_data(data_dir, max_length=10, norm_params=None, ndata=None, use_nu
     return mass, y_list
 
 class MyDataset(Dataset):
-    def __init__(self, data_dir, max_length=10, norm_params=None, ndata=None, use_dist=False, use_vel=False, ):
+    def __init__(self, data_dir, max_length=10, norm_params=None, ndata=None, use_dist=False, use_vel=False, sort=True, epsilon=1e-3):
         
-        self.x, self.y = load_halo_data(data_dir, max_length=max_length, norm_params=norm_params, ndata=ndata, use_dist=use_dist, use_vel=use_vel)
+        self.x, self.y = load_halo_data(data_dir, max_length=max_length, norm_params=norm_params, ndata=ndata, use_dist=use_dist, use_vel=use_vel, sort=sort)
 
         _, num_params = (self.y[0]).shape
 
-        self.x = torch.tensor(self.x, dtype=torch.float32)
-        self.x = self.x.unsqueeze(1) # (N, 1)
-
-        self.y_padded = torch.zeros(len(self.x), max_length, num_params) 
+        #self.y_padded = torch.zeros(len(self.x), max_length, num_params)
+        self.y_padded = torch.randn(len(self.x), max_length, num_params) * epsilon # Random initialization
         self.mask = torch.zeros(len(self.x), max_length, num_params, dtype=torch.bool)
+        self.stop = torch.zeros(len(self.x), max_length, dtype=torch.float32)
 
         for i, y_i in enumerate(self.y):
             length = len(y_i)
             self.y_padded[i, :length, :] = y_i
-            self.mask[i, :length+1, :] = True          
+            self.mask[i, :length+1, :] = True # use the last + 1 value to learn when to stop
+            self.stop[i, length-1] = 1 # stop = 1 for the last galaxy
+
+        if use_dist:
+            self.y_padded[:, 0, 1] = torch.randn_like(self.y_padded[:, 0, 1]) * epsilon # Random distance for central
+        if use_vel:
+            self.y_padded[:, 0, 2] = torch.randn_like(self.y_padded[:, 0, 2]) * epsilon # Random vrad for central
 
     def __len__(self):
         return len(self.x)
 
     def __getitem__(self, idx):
-        return self.x[idx], self.y_padded[idx], self.mask[idx]
+        return self.x[idx], self.y_padded[idx], self.mask[idx], self.stop[idx]
     
