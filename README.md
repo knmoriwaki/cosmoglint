@@ -12,13 +12,13 @@ Currently, the package is designed to work with comoving volume box data only. S
 
 You can install the package directly from GitHub:
 
-```
+```bash
 pip install git+https://github.com/knmoriwaki/lim-mock-generator.git
 ```
 
 Or, if you cloned the repository locally:
 
-```
+```bash
 git clone https://github.com/knmoriwaki/lim-mock-generator.git
 cd lim-mock-generator
 pip install -e .
@@ -29,7 +29,7 @@ Several libraries in `requirements.txt` needs to be additionally installed to us
 
 ## Usage
 
-```
+```python
 from lim_mock_generator.model.transformer import my_model
 
 with open("./examples/args_transformer.json".format(model_dir), "r") as f:
@@ -47,7 +47,7 @@ generated, prob = model.generate(x)
 ### Training 
 
 Put training data at `[data_path]` and a file that contains normalization parameters at `[norm_param_file]`, and run the following:
-```
+```bash
 cd ./scripts
 python train_transformer.py --data_path [data_path] --norm_param_file [norm_param_file] --use_dist --use_vel
 ```
@@ -71,7 +71,7 @@ The normalization parameter file should be a ascii text file that contains minim
 ### Create mock data
 
 Put a halo catalog at `[input_fname]` and the trained model (model.pth and args.json) at `[model_dir]` and run the following.
-```
+```bash
 cd ./scripts
 python create_data.py --input_fname [input_fname] --model_dir [model_dir]
 ```
