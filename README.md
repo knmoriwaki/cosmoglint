@@ -2,7 +2,7 @@
 
 A Python package of generative models for line intensity mapping (LIM) experiments. 
 
-A pre-trained model trained with a publicly available  [IllustrisTNG](https://www.tng-project.org) dataset TNG300-1 at z = 2 as well as example inputs for training and mock creation are available at [Google Drive](https://drive.google.com/drive/folders/1HRkRdfti8XaIPyF3er5QJmFX3WXCmAQI?usp=sharing).
+A pre-trained model trained with TNG300-1 at z = 2 as well as example inputs for training and mock creation are available at [Google Drive](https://drive.google.com/drive/folders/1HRkRdfti8XaIPyF3er5QJmFX3WXCmAQI?usp=sharing).
 
 Currently, the package is designed to work with comoving volume box data only. Support for lightcone data may be added in a future update.
 
@@ -89,3 +89,4 @@ Example Jupyter notebooks are available in the `notebooks/` directory:
 
 
 ## Citation
+
