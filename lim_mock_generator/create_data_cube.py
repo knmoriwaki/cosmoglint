@@ -111,7 +111,7 @@ def create_data(args):
     print(f"# Redshift: {redshift}")
     H = cosmo.H(redshift).to(u.km/u.s/u.Mpc).value #[km/s/Mpc]
     hlittle = cosmo.H(0).to(u.km/u.s/u.Mpc).value / 100.0 
-    a = 1 / (1 + redshift)
+    scale_factor = 1 / (1 + redshift)
 
     if args.model_dir == None:
         print("# Use original values in simulation data (7th column)")
@@ -122,7 +122,7 @@ def create_data(args):
             pos_real = copy.deepcopy(pos)
 
         if args.redshift_space:
-            pos[:,2] += vel[:,2] / a / H * hlittle
+            pos[:,2] += vel[:,2] / scale_factor / H * hlittle
 
         if args.gen_both:
             pos_list = [pos_real, pos]
@@ -191,7 +191,7 @@ def create_data(args):
             relative_vel_rad[flag_central] = 0 # Set vr to 0 for central galaxies
             alpha = np.random.uniform(0, 2 * np.pi, size=num_gal)
             vz_gal = - relative_vel_rad * cos_theta + relative_vel_tan * sin_theta * np.cos(alpha)
-            pos_galaxies[:,2] += ( vel_central[:,2] + vz_gal )/ a / H * hlittle
+            pos_galaxies[:,2] += ( vel_central[:,2] + vz_gal )/ scale_factor / H * hlittle
 
         if args.gen_both:
             pos_list = [pos_galaxies_real, pos_galaxies]

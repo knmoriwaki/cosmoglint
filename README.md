@@ -24,7 +24,8 @@ pip install -e .
 
 Put training data at `[data_path]` and run the following.
 ```
-python ./scripts/train_transformer.py --data_path [data_path] --use_dist --use_vel
+cd ./scripts
+python train_transformer.py --data_path [data_path] --use_dist --use_vel
 ```
 The distance and velocity relative to halo are modeled when options `--use_dist` and `--use_vel` are given.
 
@@ -45,7 +46,8 @@ and the following properties of galaxies:
 
 Put a halo catalog at `[input_fname]` and the trained model at `[model_dir]` and run the following.
 ```
-python ./scripts/create_data.py --input_fname [input_fname] --model_dir [model_dir]
+cd ./scripts
+python create_data.py --input_fname [input_fname] --model_dir [model_dir]
 ```
 
 The halo catalog should be a text file that contains halo mass [Msun] in log scale (1st column), comving positions [Mpc/h] (2nd to 4th columns), and velocities [km/s] (5th to 8th columns).
@@ -62,6 +64,6 @@ Example Jupyter notebooks are available in the `notebooks/` directory:
 
 ## Pre-trained model
 
-The pre-trained model trained with TNG300-1 data at z = 2 is available at [Google Drive](https://drive.google.com/drive/folders/1HRkRdfti8XaIPyF3er5QJmFX3WXCmAQI?usp=sharing).
+The pre-trained model trained with TNG300-1 data at z = 2 and an example input are available at [Google Drive](https://drive.google.com/drive/folders/1HRkRdfti8XaIPyF3er5QJmFX3WXCmAQI?usp=sharing).
 
 ## Citation
