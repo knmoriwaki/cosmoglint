@@ -36,7 +36,7 @@ python3 create_data.py $args --input_fname $input_fname --output_fname $output_d
 
 for model_name in transformer1 #transformer2 transformer3
 do
-    model_dir=./Transformer/output/${model_name}_${snapshot_number}_use_vel
+    model_dir=./output_transformer/${model_name}_${snapshot_number}_use_vel
 
     input_fname=./TNG_data/group.${snapshot_number}.txt
     python3 create_data.py $args --input_fname $input_fname --output_fname $output_dir/group.${snapshot_number}.${model_name}.h5 --model_dir $model_dir
