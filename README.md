@@ -48,7 +48,9 @@ Put a halo catalog at `[input_fname]` and the trained model at `[model_dir]` and
 python ./scripts/create_data.py --input_fname [input_fname] --model_dir [model_dir]
 ```
 
-The halo catalog should be a text file that contains comving positions at 1st to 3rd columns and velocities at 4th to 7th columns.
+The halo catalog should be a text file that contains halo mass [Msun] in log scale (1st column), comving positions [Mpc/h] (2nd to 4th columns), and velocities [km/s] (5th to 8th columns).
+
+Currently, the package is designed to work with comoving volume box data only. Support for lightcone data may be added in a future update.
 
 ## Visualization
 
