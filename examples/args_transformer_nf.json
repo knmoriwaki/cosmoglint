@@ -1,0 +1,1 @@
+{"model_name": "transformer1", "max_length": 40, "d_model": 128, "num_layers": 6, "num_heads": 8, "base_dist": "conditional_normal", "num_context": 16, "hidden_dim": 64, "num_flows": 8, "lambda_stop": 1, "hidden_dim_stop": 64,  "num_features": 4}

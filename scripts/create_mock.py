@@ -81,11 +81,11 @@ def create_mock(args):
 
     if "pinocchio" in args.input_fname: 
         if "old_version" in args.input_fname:
-            from utils.generation_utils import load_old_plc
+            from lim_mock_generator.utils.generation_utils import load_old_plc
             M, theta, phi, _, redshift = load_old_plc(args.input_fname)
             logm = np.log10(M)
         else:
-            import utils.ReadPinocchio5 as rp
+            import lim_mock_generator.utils.ReadPinocchio5 as rp
             myplc = rp.plc(args.input_fname)
             
             logm = np.log10( myplc.Mass )
@@ -118,14 +118,14 @@ def create_mock(args):
     intensity = np.zeros((args.npix, args.npix, args.npix_z))
 
     if "Transformer_NF" in args.model_dir:
-        from utils.generation_utils import generate_galaxy_TransNF
+        from lim_mock_generator.utils.generation_utils import generate_galaxy_TransNF
         generated, pos_central, vel_central, flag_central = generate_galaxy_TransNF(args, logm, pos, vel)
     else:
         if args.NN_model_dir is not None:
-            from utils.generation_utils import generate_galaxy_two_step
+            from lim_mock_generator.utils.generation_utils import generate_galaxy_two_step
             generated, pos_central, vel_central, flag_central = generate_galaxy_two_step(args, logm, pos, vel)
         else:
-            from utils.generation_utils import generate_galaxy
+            from lim_mock_generator.utils.generation_utils import generate_galaxy
             generated, pos_central, vel_central, flag_central = generate_galaxy(args, logm, pos, vel)
 
     theta_central = pos_central[:,0]

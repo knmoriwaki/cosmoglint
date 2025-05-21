@@ -19,7 +19,7 @@ from astropy.cosmology import FlatLambdaCDM
 cosmo = FlatLambdaCDM(H0=67.74, Om0=0.3089)
 import astropy.units as u
 
-from utils.generation_utils import generate_galaxy, generate_galaxy_two_step, generate_galaxy_TransNF, save_intensity_data, save_catalog_data
+from lim_mock_generator.utils.generation_utils import generate_galaxy, generate_galaxy_two_step, generate_galaxy_TransNF, save_intensity_data, save_catalog_data
 
 cspeed = 3e10 # [cm/s]
 micron = 1e-4 # [cm]

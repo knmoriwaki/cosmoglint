@@ -2,6 +2,7 @@
 scripts/Pinocchio/
 scripts/TNG_data/
 **/sub*.sh
+**/runs/
 **/output*/
 **/generated_data*/
 *.egg-info/

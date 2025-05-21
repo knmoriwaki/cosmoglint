@@ -2,3 +2,6 @@ numpy
 torch
 h5py
 tqdm
+astropy
+scipy
+matplotlib

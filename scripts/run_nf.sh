@@ -6,7 +6,7 @@ num_layers=4
 batch_size=1024
 num_epochs=30
 
-output_dir=./output_nf/nl${num_layers}_bs${batch_size}_ep${num_epochs}
+output_dir=./runs/output_nf/nl${num_layers}_bs${batch_size}_ep${num_epochs}
 mkdir -p $output_dir/source
 cp *.py ../norm_params.txt $output_dir/source/.
 

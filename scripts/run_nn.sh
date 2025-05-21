@@ -5,7 +5,7 @@ data_dir=../TNG_data
 num_epochs=10
 batch_size=1024
 
-output_dir=./output
+output_dir=./runs/output_nn
 mkdir -p $output_dir/source
 cp *.py ../norm_params.txt $output_dir/source/.
 
