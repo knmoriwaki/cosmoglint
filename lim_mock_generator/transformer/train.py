@@ -13,40 +13,42 @@ from torch.utils.data import random_split
 from torch.distributions import Beta
 import torch.nn.functional as F
 
-from utils import MyDataset
+from lim_mock_generator.utils.training_utils import MyDataset
 from model import my_model
 
-parser = argparse.ArgumentParser()
+def parse_args():
 
-# base parameters
-parser.add_argument("--gpu_id", type=str, default="0")
-parser.add_argument("--output_dir", type=str, default="output")
-parser.add_argument("--seed", type=int, default=12345)
+    parser = argparse.ArgumentParser()
 
-parser.add_argument("--max_length", type=int, default=30)
-parser.add_argument("--use_dist", action="store_true")
-parser.add_argument("--use_vel", action="store_true")
+    # base parameters
+    parser.add_argument("--gpu_id", type=str, default="0")
+    parser.add_argument("--output_dir", type=str, default="output")
+    parser.add_argument("--seed", type=int, default=12345)
 
-# training parameters
-parser.add_argument("--data_path", type=str, default="TNG_data/TNG300-1_38.h5")
-parser.add_argument("--train_ratio", type=float, default=0.9)
-parser.add_argument("--batch_size", type=int, default=128)
-parser.add_argument("--num_epochs", type=int, default=2)
-parser.add_argument("--lr", type=float, default=1e-3)
-parser.add_argument("--dropout", type=float, default=0.0)
-parser.add_argument("--use_sampler", action="store_true")
-parser.add_argument("--save_freq", type=int, default=100)
+    parser.add_argument("--max_length", type=int, default=30)
+    parser.add_argument("--use_dist", action="store_true")
+    parser.add_argument("--use_vel", action="store_true")
 
-# model parameters
-parser.add_argument("--model_name", type=str, default="transformer1")
-parser.add_argument("--d_model", type=int, default=128)
-parser.add_argument("--num_layers", type=int, default=4)
-parser.add_argument("--num_heads", type=int, default=8)
-parser.add_argument("--num_features_out", type=int, default=200)
+    # training parameters
+    parser.add_argument("--data_path", type=str, default="data.h5")
+    parser.add_argument("--train_ratio", type=float, default=0.9)
+    parser.add_argument("--batch_size", type=int, default=128)
+    parser.add_argument("--num_epochs", type=int, default=2)
+    parser.add_argument("--lr", type=float, default=1e-3)
+    parser.add_argument("--dropout", type=float, default=0.0)
+    parser.add_argument("--use_sampler", action="store_true")
+    parser.add_argument("--save_freq", type=int, default=100)
 
-args = parser.parse_args()
+    # model parameters
+    parser.add_argument("--model_name", type=str, default="transformer1")
+    parser.add_argument("--d_model", type=int, default=128)
+    parser.add_argument("--num_layers", type=int, default=4)
+    parser.add_argument("--num_heads", type=int, default=8)
+    parser.add_argument("--num_features_out", type=int, default=200)
 
-def main():
+    return parser.parse_args()
+
+def train_model(args):
 
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed(args.seed)
@@ -193,5 +195,7 @@ def main():
             print(f"# Model saved to {fname}")
 
 if __name__ == "__main__":
-    main()
+    args = parse_args()
+    os.makedirs(args.output_dir, exist_ok=True)
+    train_model(args)
     

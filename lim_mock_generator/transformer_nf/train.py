@@ -11,50 +11,52 @@ import torch
 from torch.utils.data import DataLoader, WeightedRandomSampler
 from torch.utils.data import random_split
 
-from utils import MyDataset, my_load_model, my_save_model
+from lim_mock_generator.utils.training_utils import MyDataset, my_load_model, my_save_model
 from model import my_model, my_flow_model, my_stop_predictor, calculate_loss
 
-parser = argparse.ArgumentParser()
+def parse_args():
 
-# base parameters
-parser.add_argument("--gpu_id", type=int, default=0)
-parser.add_argument("--output_dir", type=str, default="output")
-parser.add_argument("--max_length", type=int, default=30)
-parser.add_argument("--use_dist", action="store_true")
-parser.add_argument("--use_vel", action="store_true")
-parser.add_argument("--seed", type=int, default=12345)
+    parser = argparse.ArgumentParser()
 
-# training parameters
-parser.add_argument("--data_dir", type=str, default="TNG_data")
-parser.add_argument("--train_ratio", type=float, default=0.9)
-parser.add_argument("--batch_size", type=int, default=128)
-parser.add_argument("--num_epochs", type=int, default=2)
-parser.add_argument("--lr", type=float, default=1e-4)
-parser.add_argument("--dropout", type=float, default=0.0)
-parser.add_argument("--use_sampler", action="store_true")
-parser.add_argument("--save_freq", type=int, default=100)
-parser.add_argument("--load_epoch", type=int, default=0, help="load model from checkpoint")
+    # base parameters
+    parser.add_argument("--gpu_id", type=int, default=0)
+    parser.add_argument("--output_dir", type=str, default="output")
+    parser.add_argument("--max_length", type=int, default=30)
+    parser.add_argument("--use_dist", action="store_true")
+    parser.add_argument("--use_vel", action="store_true")
+    parser.add_argument("--seed", type=int, default=12345)
 
-# model parameters
-parser.add_argument("--model_name", type=str, default="transformer1")
+    # training parameters
+    parser.add_argument("--data_path", type=str, default="data.h5")
+    parser.add_argument("--train_ratio", type=float, default=0.9)
+    parser.add_argument("--batch_size", type=int, default=128)
+    parser.add_argument("--num_epochs", type=int, default=2)
+    parser.add_argument("--lr", type=float, default=1e-4)
+    parser.add_argument("--dropout", type=float, default=0.0)
+    parser.add_argument("--use_sampler", action="store_true")
+    parser.add_argument("--save_freq", type=int, default=100)
+    parser.add_argument("--load_epoch", type=int, default=0, help="load model from checkpoint")
 
-parser.add_argument("--d_model", type=int, default=128, help="hidden dimension of transformer")
-parser.add_argument("--num_layers", type=int, default=4, help="number of transformer layers")
-parser.add_argument("--num_heads", type=int, default=8, help="number of attention heads")
+    # model parameters
+    parser.add_argument("--model_name", type=str, default="transformer1")
 
-parser.add_argument("--base_dist", type=str, default="normal", help="base distribution")
-parser.add_argument("--num_context", type=int, default=4, help="number of context features")
-parser.add_argument("--hidden_dim", type=int, default=64, help="hidden dimension of flow") 
-parser.add_argument("--num_flows", type=int, default=4, help="number of flows")
+    parser.add_argument("--d_model", type=int, default=128, help="hidden dimension of transformer")
+    parser.add_argument("--num_layers", type=int, default=4, help="number of transformer layers")
+    parser.add_argument("--num_heads", type=int, default=8, help="number of attention heads")
 
-parser.add_argument("--lambda_stop", type=float, default=1, help="weight for stop prediction loss")
-parser.add_argument("--hidden_dim_stop", type=int, default=64, help="hidden dimension of stop predictor")
-parser.add_argument("--verbose", action="store_true", help="verbose mode")
+    parser.add_argument("--base_dist", type=str, default="normal", help="base distribution")
+    parser.add_argument("--num_context", type=int, default=4, help="number of context features")
+    parser.add_argument("--hidden_dim", type=int, default=64, help="hidden dimension of flow") 
+    parser.add_argument("--num_flows", type=int, default=4, help="number of flows")
 
-args = parser.parse_args()
+    parser.add_argument("--lambda_stop", type=float, default=1, help="weight for stop prediction loss")
+    parser.add_argument("--hidden_dim_stop", type=int, default=64, help="hidden dimension of stop predictor")
+    parser.add_argument("--verbose", action="store_true", help="verbose mode")
+
+    return parser.parse_args()
 
 
-def main():
+def train_model(args):
 
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed(args.seed)
@@ -65,7 +67,7 @@ def main():
 
     ### Load data
     norm_params = np.loadtxt("./norm_params.txt")
-    dataset = MyDataset(args.data_dir, max_length=args.max_length, norm_params=norm_params, use_dist=args.use_dist, use_vel=args.use_vel)
+    dataset = MyDataset(args.data_path, max_length=args.max_length, norm_params=norm_params, use_dist=args.use_dist, use_vel=args.use_vel)
     train_size = int(args.train_ratio * len(dataset))
     val_size = len(dataset) - train_size
     train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
@@ -179,5 +181,7 @@ def main():
             #my_save_model(stop_predictor, f"{args.output_dir}/stop_predictor_ep{epoch_now}.pth")
     
 if __name__ == "__main__":
-    main()
+    args = parse_args()
+    os.makedirs(args.output_dir, exist_ok=True)
+    train_model(args)
     

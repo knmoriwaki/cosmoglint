@@ -1,5 +1,7 @@
 **/__pycache__/
-**/output*/
-lim_mock_generator/Pinocchio/
-lim_mock_generator/TNG_data/
+scripts/Pinocchio/
+scripts/TNG_data/
 **/sub*.sh
+**/output*/
+**/generated_data*/
+*.egg-info/

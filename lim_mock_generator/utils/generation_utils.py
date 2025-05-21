@@ -358,3 +358,42 @@ def generate_galaxy(args, logm, pos, vel):
     
     return generated, pos_central, vel_central, flag_central
 
+
+def load_old_plc(filename):
+    import struct
+
+    plc_struct_format = "<Q d ddd ddd ddddd"  # Q=uint64, d=double, little-endian
+    plc_size = struct.calcsize(plc_struct_format)
+
+    M_list = []
+    th_list = []
+    ph_list = []
+    vl_list = []
+    zo_list = []
+    with open(filename, "rb") as f:
+        while True:
+            dummy_bytes = f.read(4)
+            if not dummy_bytes:
+                break  # EOF
+            dummy = struct.unpack("<i", dummy_bytes)[0]
+
+            plc_bytes = f.read(dummy)
+            if len(plc_bytes) != dummy:
+                break  # 不完全な読み込み
+
+            data = struct.unpack(plc_struct_format, plc_bytes)
+            (
+                id, z, x1, x2, x3, v1, v2, v3,
+                M, th, ph, vl, zo
+            ) = data
+
+            dummy2_bytes = f.read(4)
+            dummy2 = struct.unpack("<i", dummy2_bytes)[0]
+
+            M_list.append(M)
+            th_list.append(th)
+            ph_list.append(ph)
+            vl_list.append(vl)
+            zo_list.append(zo)
+    
+    return np.array(M_list), np.array(th_list), np.array(ph_list), np.array(vl_list), np.array(zo_list)
