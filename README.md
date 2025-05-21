@@ -4,6 +4,7 @@ A Python package of generative models for line intensity mapping (LIM) experimen
 
 A pre-trained model trained with TNG300-1 data at z = 2 as well as example inputs for training and mock creation are available at [Google Drive](https://drive.google.com/drive/folders/1HRkRdfti8XaIPyF3er5QJmFX3WXCmAQI?usp=sharing).
 
+Currently, the package is designed to work with comoving volume box data only. Support for lightcone data may be added in a future update.
 
 ---
 
@@ -32,7 +33,7 @@ python train_transformer.py --data_path [data_path] --use_dist --use_vel
 ```
 The distance and velocity relative to halo are modeled when options `--use_dist` and `--use_vel` are given.
 
-The data should be a hdf5 file that contains the following properties of halos:
+The training data should be a hdf5 file that contains the following properties of halos:
 - `HaloMass` 
 - `NumSubgroups` 
 - `Offset` 
@@ -54,8 +55,6 @@ python create_data.py --input_fname [input_fname] --model_dir [model_dir]
 ```
 
 The halo catalog should be a text file that contains halo mass [Msun] in log scale (1st column), comving positions [Mpc/h] (2nd to 4th columns), and velocities [km/s] (5th to 8th columns).
-
-Currently, the package is designed to work with comoving volume box data only. Support for lightcone data may be added in a future update.
 
 ## Visualization
 
