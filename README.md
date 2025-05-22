@@ -24,7 +24,10 @@ cd lim-mock-generator
 pip install -e .
 ```
 
-Libraries in `requirements.txt` needs to be additionally installed to use the scripts and notebooks.
+To use scripts and notebooks, several libraries needs to be additionally installed:
+```bash
+pip install -r requirements.txt
+```
 
 ## Training 
 
