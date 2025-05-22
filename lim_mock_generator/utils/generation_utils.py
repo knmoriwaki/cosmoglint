@@ -68,7 +68,7 @@ def generate_galaxy_TransNF(args, logm, pos, vel):
 
     print("# Use Transformer-NF to generate galaxies")
 
-    from Transformer_NF.model import my_model, my_flow_model, generate
+    from lim_mock_generator.model.transformer_nf import my_model, my_flow_model, generate
     device = torch.device("cuda:{}".format(args.gpu_id) if torch.cuda.is_available() else "cpu")
 
     ### load Transformer
@@ -157,9 +157,9 @@ def generate_galaxy_two_step(args, logm, pos, vel):
 
     print("# Use Transformer to generate SFR")
 
-    from Transformer.model import my_model
-    from Transformer.NN.model import my_NN_model 
-    from Transformer.NF.model import my_flow_model
+    from lim_mock_generator.model.transformer import my_model
+    from lim_mock_generator.model.nn import my_NN_model 
+    from lim_mock_generator.model.nf import my_flow_model
     device = torch.device("cuda:{}".format(args.gpu_id) if torch.cuda.is_available() else "cpu")
 
     ### load Transformer
@@ -283,7 +283,7 @@ def generate_galaxy(args, logm, pos, vel):
 
     print("# Use Transformer to generate SFR")
 
-    from Transformer.model import my_model
+    from lim_mock_generator.model.transformer import my_model
     device = torch.device("cuda:{}".format(args.gpu_id) if torch.cuda.is_available() else "cpu")
 
     ### load Transformer

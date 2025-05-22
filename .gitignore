@@ -6,3 +6,4 @@ scripts/TNG_data/
 **/output*/
 **/generated_data*/
 *.egg-info/
+scripts/create_mock.py

@@ -32,28 +32,28 @@ def parse_args():
     parser.add_argument("--gpu_id", type=int, default=0, help="GPU ID to use")
 
     ### I/O parameters
-    parser.add_argument("--input_fname", type=str, default="./Pinocchio/output/pinocchio.r01000.plc.out")
-    parser.add_argument("--output_fname", type=str, default="test.h5")
+    parser.add_argument("--input_fname", type=str, default="./Pinocchio/output/pinocchio.r01000.plc.out", help="Input filename")
+    parser.add_argument("--output_fname", type=str, default="test.h5", help="Output filename")
 
-    parser.add_argument("--boxsize", type=float, default=100.0)
+    parser.add_argument("--boxsize", type=float, default=100.0, help="Box size [Mpc/h]")
 
     ### Output format parameters
-    parser.add_argument("--npix", type=int, default=100)
-    parser.add_argument("--npix_z", type=int, default=90)
+    parser.add_argument("--npix", type=int, default=100, help="Number of pixels in x and y direction")
+    parser.add_argument("--npix_z", type=int, default=90 help="Number of pixels in z direction")
 
     parser.add_argument("--redshift_space", action="store_true", default=False, help="Use redshift space")
     parser.add_argument("--gen_both", action="store_true", default=False, help="Generate both real and redshift space data")
 
-    parser.add_argument("--gen_catalog", action="store_true", default=False, help="Generate a catalog of galaxies")
-    parser.add_argument("--catalog_threshold", type=float, default=10, help="Threshold for SFR in the catalog")
+    parser.add_argument("--gen_catalog", action="store_true", default=False, help="Generate a catalog of galaxies instead of a data cube")
+    parser.add_argument("--catalog_threshold", type=float, default=10, help="Threshold for SFR in the catalog in [Msun/yr]")
 
-    parser.add_argument("--logm_min", type=float, default=11.0, help="Minimum log mass")
-    parser.add_argument("--threshold", type=float, default=0.1, help="Threshold for SFR")
+    parser.add_argument("--logm_min", type=float, default=11.0, help="Minimum log mass [Msun] to be used")
+    parser.add_argument("--threshold", type=float, default=1e-3, help="Galaxies with SFR > threshold [Msun/yr] will be used")
 
     ### Generative model parameters (not used when using the original values in simulation data)
-    parser.add_argument("--model_dir", type=str, default=None, help="The directory of the model. If not given, use 4th column as intensity.")
-    parser.add_argument("--NN_model_dir", type=str, default=None, help="The directory of the NN model. If not given, use 4th column as intensity.") 
-    parser.add_argument("--mass_correction_factor", type=float, default=1.0, help="Mass correction factor")
+    parser.add_argument("--model_dir", type=str, default=None, help="The directory of the model. If not given, use 7th column as intensity.")
+    parser.add_argument("--NN_model_dir", type=str, default=None, help="The directory of the NN model. If both model_dir and NN_model_dir are given, the galaxies are generated with two-step method.") 
+    parser.add_argument("--mass_correction_factor", type=float, default=1.0, help="Mass correction factor; the halo mass is multiplied by this factor before generating galaxies.")
 
     return parser.parse_args()
 
@@ -77,7 +77,7 @@ def create_data(args):
         match = re.search(r'pinocchio\.([0-9]+\.[0-9]+)', args.input_fname)
         redshift = float(match.group(1))
             
-        import utils.ReadPinocchio5 as rp
+        import lim_mock_generator.utils.ReadPinocchio5 as rp
         mycat = rp.catalog(args.input_fname)
         
         hlittle = cosmo.H(0).to(u.km/u.s/u.Mpc).value / 100.0 
