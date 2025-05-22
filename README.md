@@ -24,7 +24,7 @@ cd lim-mock-generator
 pip install -e .
 ```
 
-Several libraries in `requirements.txt` needs to be additionally installed to use the scripts and notebooks.
+Libraries in `requirements.txt` needs to be additionally installed to use the scripts and notebooks.
 
 ## Training 
 
@@ -33,32 +33,23 @@ Run the following command:
 cd ./scripts
 python train_transformer.py --data_path [data_path] --norm_param_file [norm_param_file] --use_dist --use_vel
 ```
-where:
-- `[data_path]` is the path to the training data.
-- `[norm_param_file]` is the normalization parameter file name.
 
-The distance and velocity relative to halo are modeled when options `--use_dist` and `--use_vel` are given.
-
-The training data is a hdf5 file that contains properties of halos (`HaloMass`, `NumSubgroups`, `Offset`) and galaxies (`SubgroupSFR`, `SubgroupDist`, `SubgroupVrad`, `SubgroupVtan`). 
-
-`NumSubgroups` and `Offset` are used for determining host halos of galaxies.
-
-The normalization parameter file is a text file that contains minimum (1st column) and maximum (2nd column) values for the input and output parameters.
+Options:
+- `[data_path]`: path to the training data. Data is an hdf5 file that contains properties of halos (`HaloMass`, `NumSubgroups`, `Offset`) and galaxies (`SubgroupSFR`, `SubgroupDist`, `SubgroupVrad`, `SubgroupVtan`), where `NumSubgroups` and `Offset` are used for determining host halos of galaxies.
+- `[norm_param_file]`: normalization parameter file name. The file contains minimum (1st column) and maximum (2nd column) values for the input and output parameters.
+- `--use_dist`: distance to halo is modeled if this is given.
+- `--use_vel`: relative velocity to halo is modeled if this is given.
 
 ## Create mock data
 
 Run the following command:
 ```bash
 cd ./scripts
-python create_data.py --input_fname [input_fname] --model_dir [model_dir]
+python create_data.py --model_dir [model_dir] --input_fname [input_fname] 
 ```
-where:
-- `[input_fname]` is the path to the halo catalog.
-- `[model_dir]` is the directory containing `model.pth` and `args.json`.
-
-The halo catalog is a text file that contains halo mass [Msun] in log scale (1st column), comving positions [Mpc/h] (2nd to 4th columns), and velocities [km/s] (5th to 8th columns).
-
-Halo catalog in [Pinocchio](https://github.com/pigimonaco/Pinocchio) format is also supported.
+Options:
+- `[model_dir]`: directory containing `model.pth` and `args.json`.
+- `[input_fname]`: path to the halo catalog. Text file that contains halo mass [Msun] in log scale (1st column), comving positions [Mpc/h] (2nd to 4th columns), and velocities [km/s] (5th to 8th columns) and catalog in [Pinocchio](https://github.com/pigimonaco/Pinocchio) format are supported.
 
 ## Visualization
 
