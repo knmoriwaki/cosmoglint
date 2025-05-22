@@ -1,6 +1,6 @@
-# LIM Mock Generator
+# Transformer-based Mock Generator for Line Intensity Mapping 
 
-A Python package of transformer-based generative models for line intensity mapping (LIM) experiments. 
+Model to generate galaxy properties for a given halo mass.
 
 A model trained with TNG300-1 at z = 2 as well as example inputs for training and mock creation are available at [Google Drive](https://drive.google.com/drive/folders/1HRkRdfti8XaIPyF3er5QJmFX3WXCmAQI?usp=sharing).
 
