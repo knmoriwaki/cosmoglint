@@ -1,6 +1,6 @@
 # LIM Mock Generator
 
-A Python package of generative models for line intensity mapping (LIM) experiments. 
+A Python package of transformer-based generative models for line intensity mapping (LIM) experiments. 
 
 A model trained with TNG300-1 at z = 2 as well as example inputs for training and mock creation are available at [Google Drive](https://drive.google.com/drive/folders/1HRkRdfti8XaIPyF3er5QJmFX3WXCmAQI?usp=sharing).
 
@@ -26,9 +26,7 @@ pip install -e .
 
 Several libraries in `requirements.txt` needs to be additionally installed to use the scripts and notebooks.
 
-## Scripts
-
-### Training 
+## Training 
 
 Run the following command:
 ```bash
@@ -41,22 +39,13 @@ where:
 
 The distance and velocity relative to halo are modeled when options `--use_dist` and `--use_vel` are given.
 
-The training data is a hdf5 file that contains the following properties of halos:
-- `HaloMass` 
-- `NumSubgroups` 
-- `Offset` 
-
-and the following properties of galaxies:
-- `SubgroupSFR` 
-- `SubgroupDist` 
-- `SubgroupVrad` 
-- `SubgroupVtan` 
+The training data is a hdf5 file that contains properties of halos (`HaloMass`, `NumSubgroups`, `Offset`) and galaxies (`SubgroupSFR`, `SubgroupDist`, `SubgroupVrad`, `SubgroupVtan`). 
 
 `NumSubgroups` and `Offset` are used for determining host halos of galaxies.
 
 The normalization parameter file is a text file that contains minimum (1st column) and maximum (2nd column) values for the input and output parameters.
 
-### Create mock data
+## Create mock data
 
 Run the following command:
 ```bash
