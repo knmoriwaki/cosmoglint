@@ -6,17 +6,19 @@ A model trained with TNG300-1 at z = 2 as well as example inputs for training an
 
 Currently, the package is designed to work with comoving volume box data only. Support for lightcone data may be added in a future update.
 
+For detailed usage and options, see [DOCUMENTATION](./DOCUMENTATION.md).
+
 ---
 
 ## Installation
 
-You can install the package directly from GitHub:
+Install from GitHub:
 
 ```bash
 pip install git+https://github.com/knmoriwaki/lim-mock-generator.git
 ```
 
-Or, if you cloned the repository locally:
+Install from local clone:
 
 ```bash
 git clone https://github.com/knmoriwaki/lim-mock-generator.git
@@ -31,28 +33,27 @@ pip install -r requirements.txt
 
 ## Training 
 
-Run the following command:
+Example:
 ```bash
-cd ./scripts
 python train_transformer.py --data_path [data_path] --norm_param_file [norm_param_file] --use_dist --use_vel
 ```
 
 Options:
-- `[data_path]`: path to the training data. Data is an hdf5 file that contains properties of halos (`HaloMass`, `NumSubgroups`, `Offset`) and galaxies (`SubgroupSFR`, `SubgroupDist`, `SubgroupVrad`, `SubgroupVtan`), where `NumSubgroups` and `Offset` are used for determining host halos of galaxies.
-- `[norm_param_file]`: normalization parameter file name. The file contains minimum (1st column) and maximum (2nd column) values for the input and output parameters.
-- `--use_dist`: distance to halo is modeled if this is given.
-- `--use_vel`: relative velocity to halo is modeled if this is given.
+- `--data_path`: path to the training data. Data is an hdf5 file that contains properties of halos (`HaloMass`, `NumSubgroups`, `Offset`) and galaxies (`SubgroupSFR`, `SubgroupDist`, `SubgroupVrad`, `SubgroupVtan`), where `NumSubgroups` and `Offset` are used for determining host halos of galaxies.
+- `--norm_param_file`: Path to the normalization parameter file. The file contains minimum (1st column) and maximum (2nd column) values for the input and output parameters.
+- `--use_dist`: If set, the distance to halo is predicted
+- `--use_vel`: If set, relative velocity to halo is predicted
 
 ## Create mock data
 
-Run the following command:
+Example:
 ```bash
-cd ./scripts
-python create_data.py --model_dir [model_dir] --input_fname [input_fname] 
+python create_data_cube.py --input_fname [input_fname] --model_dir [model_dir] 
 ```
+
 Options:
-- `[model_dir]`: directory containing `model.pth` and `args.json`.
-- `[input_fname]`: path to the halo catalog. Text file that contains halo mass [Msun] in log scale (1st column), comving positions [Mpc/h] (2nd to 4th columns), and velocities [km/s] (5th to 8th columns) and catalog in [Pinocchio](https://github.com/pigimonaco/Pinocchio) format are supported.
+- `--input_fname`: Path to the halo catalog. Text file that contains halo mass [Msun] in log scale (1st column), comving positions [Mpc/h] (2nd to 4th columns), and velocities [km/s] (5th to 8th columns) and catalog in [Pinocchio](https://github.com/pigimonaco/Pinocchio) format are supported.
+- `--model_dir`: Path to a directory containing the trained model (`model.pth` and `args.json`). If not set, column 7 of the input file is used as intensity.
 
 ## Visualization
 
