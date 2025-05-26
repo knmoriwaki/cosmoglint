@@ -1,6 +1,5 @@
 **/__pycache__/
-scripts/Pinocchio/
-scripts/TNG_data/
+dataset/
 **/sub*.sh
 **/runs/
 **/output*/

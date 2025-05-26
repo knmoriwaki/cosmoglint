@@ -27,6 +27,12 @@ Install from local clone:
 ```bash
 git clone https://github.com/knmoriwaki/lim-mock-generator.git
 cd lim-mock-generator
+pip install .
+```
+
+For developer (editable mode):
+
+```bash
 pip install -e .
 ```
 

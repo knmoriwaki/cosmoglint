@@ -102,7 +102,7 @@ def train_model(args):
 
     ### Training
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-5)
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.num_epochs, eta_min=1e-5)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.num_epochs, eta_min=1e-6)
 
     def loss_func(output, target, mask):
         # output: (batch, seq_length, num_features_in, num_features_out)

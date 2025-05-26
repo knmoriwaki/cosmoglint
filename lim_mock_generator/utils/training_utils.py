@@ -57,11 +57,14 @@ def load_halo_data(file_path, max_length=10, norm_params=None, ndata=None, use_d
     with h5py.File(file_path, "r") as f:
         mass, mask = load_values(f, "HaloMass", xmin[0], xmax[0])
         sfr, _ = load_values(f, "SubgroupSFR", xmin[1], xmax[1])
+        num_params = 1
         if use_dist:
             dist, _ = load_values(f, "SubgroupDist", xmin[2], xmax[2])
+            num_params += 1
         if use_vel:
             vrad, _ = load_values(f, "SubgroupVrad", xmin[3], xmax[3])
             vtan, _ = load_values(f, "SubgroupVtan", xmin[4], xmax[4])
+            num_params += 2
 
         num_subgroups = f["NumSubgroups"][:]
         offset = f["Offset"][:]
@@ -72,7 +75,10 @@ def load_halo_data(file_path, max_length=10, norm_params=None, ndata=None, use_d
 
             start = offset[j]
             end = start + num_subgroups[j]
-            if use_vel:
+            
+            if num_subgroups[j] == 0:
+                y_j = np.zeros((1, num_params)) # handle empty subgroups
+            elif use_vel:
                 y_j = np.stack([sfr[start:end], dist[start:end], vrad[start:end], vtan[start:end]], axis=1) # (num_subgroups, 2)
             elif use_dist:
                 y_j = np.stack([sfr[start:end], dist[start:end]], axis=1)

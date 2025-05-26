@@ -1,6 +1,6 @@
 #!/bin/bash
 
-data_dir=../TNG_data
+data_dir=../dataset/TNG300-1
 
 num_epochs=10
 batch_size=1024

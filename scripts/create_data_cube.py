@@ -39,7 +39,7 @@ def parse_args():
 
     ### Output format parameters
     parser.add_argument("--npix", type=int, default=100, help="Number of pixels in x and y direction")
-    parser.add_argument("--npix_z", type=int, default=90 help="Number of pixels in z direction")
+    parser.add_argument("--npix_z", type=int, default=90, help="Number of pixels in z direction")
 
     parser.add_argument("--redshift_space", action="store_true", default=False, help="Use redshift space")
     parser.add_argument("--gen_both", action="store_true", default=False, help="Generate both real and redshift space data")

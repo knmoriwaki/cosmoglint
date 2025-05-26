@@ -3,7 +3,7 @@
 gpu_id=1
 
 snapshot_number=33
-data_path=./TNG_data/TNG300-1_${snapshot_number}.h5
+data_path=../dataset/TNG300-1/TNG300-1_${snapshot_number}.h5
 
 num_epochs=20
 batch_size=512
