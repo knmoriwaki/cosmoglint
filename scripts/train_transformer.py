@@ -32,7 +32,7 @@ def parse_args():
     parser.add_argument("--norm_param_file", type=str, default="./norm_params.txt")
 
     # training parameters
-    parser.add_argument("--data_path", type=str, default="data.h5")
+    parser.add_argument("--data_path", type=str, nargs='+', default=["data.h5"])
     parser.add_argument("--train_ratio", type=float, default=0.9)
     parser.add_argument("--batch_size", type=int, default=128)
     parser.add_argument("--num_epochs", type=int, default=2)
@@ -66,18 +66,22 @@ def train_model(args):
     val_size = len(dataset) - train_size
     train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
 
+    def get_sampler(x, nbins=20, xmin=0, xmax=1, temperature=1, weight_min=1e-8):
+        bins = torch.linspace(xmin, xmax, steps=nbins+1)
+        bin_indices = torch.bucketize(x, bins)
+        counts = torch.bincount(bin_indices)
+        weights = 1. / counts[bin_indices] 
+        weights = weights.pow(temperature) # Apply temperature scaling
+        weights = weights.clamp(min=weight_min) # Avoid zero weights
+        # When setting replacement to True and num_samples to the original number of samples, the sampler can select the same sample multiple times even within a single epoch.
+        # The minimum weight is set to balance the sampling (few samples appear less frequently than when minimum is not set) 
+        # Large minimum weight (larger than ~1e-5: the maximum number of halo mass function at z = 2) means the rare samples will be sampled more frequently (could suffer from overfitting, but might be faster to converge)
+        return WeightedRandomSampler(weights.tolist(), len(weights), replacement=True)
+    
     if args.use_sampler:
-        def get_sampler(x, nbins=20, xmin=0, xmax=1):
-            bins = torch.linspace(xmin, xmax, steps=nbins+1)
-            bin_indices = torch.bucketize(x, bins)
-            counts = torch.bincount(bin_indices)
-            weights = 1. / counts[bin_indices]
-            weights = torch.clamp(weights, min=0.05, max=1) # avoid too small weights
-            return WeightedRandomSampler(weights.tolist(), len(weights), replacement=True)
-
-        sampler = get_sampler(train_dataset.dataset.x[train_dataset.indices][:,0])
+        sampler = get_sampler(train_dataset.dataset.x[train_dataset.indices][:,0], weight_min=0.01)
         train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, sampler=sampler) 
-        sampler = get_sampler(val_dataset.dataset.x[val_dataset.indices][:,0])
+        sampler = get_sampler(val_dataset.dataset.x[val_dataset.indices][:,0], weight_min=0.01)
         val_dataloader = DataLoader(val_dataset, batch_size=args.batch_size, sampler=sampler)
     else:
         train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
@@ -104,21 +108,25 @@ def train_model(args):
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-5)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.num_epochs, eta_min=1e-6)
 
-    def loss_func(output, target, mask):
+    def loss_func(output, target, mask, weight=None):
         # output: (batch, seq_length, num_features_in, num_features_out)
         # target: (batch, seq_length, num_features_in)
+        # mask: (batch, ) or (batch, seq_length) or (batch, seq_length, num_features_in)
+        # weight: (batch, ) or (batch, seq_length) or (batch, seq_length, num_features_in)
 
         batch_size, seq_length, num_features_in, num_features_out = output.shape
+        if weight is None:
+            weight = torch.ones_like(target, dtype=torch.float32, device=target.device) # (batch, seq_length)
             
         if num_features_out == 1:
             loss = F.mse_loss(output, target, reduction='none')
             #loss = loss.mul(mask).sum() / (mask.sum() + 1e-8)
-            loss = loss.mean()
+            loss = (loss * weight * mask).sum() / ( (weight * mask).sum() + 1e-8 )
         elif num_features_out == 2:
             alpha, beta = output[:, :, 0], output[:, :, 1]
             beta_dist = Beta(alpha, beta)
             log_prob = beta_dist.log_prob(target)
-            loss = - (log_prob * mask).sum() / mask.sum() # ignore padding except for the first one.
+            loss = - (log_prob * weight * mask).sum() / ( (weight * mask).sum() + 1e-8 ) # ignore padding except for the first one.
         else:
             target_bins = (target * num_features_out).long() # (batch, seq_length, num_features_in) [0, 1] -> [0, num_features_out-1]
             target_bins = torch.clamp(target_bins, min=0, max=num_features_out - 1)
@@ -126,10 +134,11 @@ def train_model(args):
             output = output.view(-1, num_features_out) # (batch * seq_length * num_features_in, num_features_out)
             target_bins = target_bins.view(-1) # (batch * seq_length * num_features_in, )
             mask = mask.view(-1) # (batch * seq_length * num_features_in, )
+            weight = weight.view(-1) # (batch * seq_length * num_features_in, )
 
             log_prob = torch.log(output + 1e-8)
             loss_nll = F.nll_loss(log_prob, target_bins, reduction='none') 
-            loss = (loss_nll * mask).sum() / (mask.sum() + 1e-8)
+            loss = (loss_nll * weight * mask).sum() / ( (weight * mask).sum() + 1e-8 )
         
         return loss 
 
@@ -146,11 +155,17 @@ def train_model(args):
         #teacher_forcing_ratio = 1. if epoch < 10 else 0.
         #teacher_forcing_ratio = 1. - epoch / args.num_epochs
 
+        ### curriculum learning
+        #temperature = 1 - np.exp( -0.3 * epoch )
+        #sampler = get_sampler(train_dataset.dataset.x[train_dataset.indices][:,0], temperature=temperature)
+        #train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, sampler=sampler)
+
         for count, (context, seq, mask) in enumerate(train_dataloader):
             context = context.to(device)  # (batch, num_condition)   
             seq = seq.to(device)     # (batch, max_length, num_features_in)
             mask = mask.to(device)   # (batch, max_length)
-            #weight = (torch.tensor(10).pow(context[:,0])).unsqueeze(1).unsqueeze(2).expand_as(seq).contiguous() # (batch, max_length, num_features_in)
+            #weight = (6.7 * context[:,0]).pow(10).detach()
+            #weight = weight / weight.mean()
             
             optimizer.zero_grad()
 
@@ -159,7 +174,7 @@ def train_model(args):
             #_, output = model.generate(context, seq=seq, teacher_forcing_ratio=teacher_forcing_ratio) 
             # output: (batch, max_length, num_features_in, num_features_out)
             
-            loss = loss_func(output, seq, mask)
+            loss = loss_func(output, seq, mask) #, weight=weight)
 
             loss.backward()
             optimizer.step()
@@ -170,7 +185,7 @@ def train_model(args):
                     context_val = context_val.to(device)
                     seq_val = seq_val.to(device)
                     mask_val = mask_val.to(device)
-                    #weight = (context_val[:,0].pow(10)).unsqueeze(1).unsqueeze(2).expand_as(seq_val).contiguous() # (batch, max_length, num_features_in)
+                    #weight = (6.7 * context_val[:,0]).pow(10).detach()
                     
                     input_seq_val = seq_val[:, :-1]
                     output_val = model(context_val, input_seq_val)

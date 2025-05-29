@@ -29,7 +29,7 @@ def parse_args():
     parser.add_argument("--norm_param_file", type=str, default="./norm_params.txt")
 
     # training parameters
-    parser.add_argument("--data_path", type=str, default="data.h5")
+    parser.add_argument("--data_path", type=str, nargs='+', default=["data.h5"])
     parser.add_argument("--train_ratio", type=float, default=0.9)
     parser.add_argument("--batch_size", type=int, default=128)
     parser.add_argument("--num_epochs", type=int, default=2)

@@ -107,7 +107,16 @@ def load_halo_data(file_path, max_length=10, norm_params=None, ndata=None, use_d
 class MyDataset(Dataset):
     def __init__(self, path, max_length=10, norm_params=None, ndata=None, use_dist=False, use_vel=False, sort=True):
         
-        self.x, self.y = load_halo_data(path, max_length=max_length, norm_params=norm_params, ndata=ndata, use_dist=use_dist, use_vel=use_vel, sort=sort)
+        if not isinstance(path, list):
+            path = [path]
+
+        self.x = torch.empty((0, 1))
+        self.y = []
+
+        for p in path:
+            x_tmp, y_tmp = load_halo_data(p, max_length=max_length, norm_params=norm_params, ndata=ndata, use_dist=use_dist, use_vel=use_vel, sort=sort)
+            self.x = torch.cat([self.x, x_tmp], dim=0)
+            self.y = self.y + y_tmp
 
         _, num_params = (self.y[0]).shape
 
