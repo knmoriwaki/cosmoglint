@@ -309,12 +309,13 @@ def generate_galaxy(args, logm, pos, vel):
     
     num_batch = (len(logm) + opt.batch_size - 1) // opt.batch_size
     prob_threshold = 1e-5
+    stop_criterion = ( np.log10(args.threshold) - xmin[1] ) / (xmax[1] - xmin[1]) # stop criterion for SFR
     generated = []
     for batch_idx in tqdm(range(num_batch)):
         start = batch_idx * opt.batch_size 
         logm_batch = logm[start: start + opt.batch_size] # (batch_size, num_features)
         with torch.no_grad():
-            generated_batch, _ = model.generate(logm_batch, prob_threshold=prob_threshold)
+            generated_batch, _ = model.generate(logm_batch, prob_threshold=prob_threshold, stop_criterion=stop_criterion) # (batch_size, seq_length, num_features)
         generated.append(generated_batch)
     generated = torch.cat(generated, dim=0) # (num_halos, seq_length, num_features)
 

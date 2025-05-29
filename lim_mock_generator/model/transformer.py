@@ -85,25 +85,23 @@ class TransformerBase(nn.Module):
                     next_token = beta_dist.sample().unsqueeze(1)  # (batch, 1)
                 else:
                     x_last = x_last / temperature
-                    
-                    x_last = self._set_to_zero(x_last, x_last < prob_threshold) # set the probability to zero if less than prob_threshold
-
-                    mask_all_batch = torch.ones(batch_size, dtype=torch.bool).to(context.device)
 
                     if t > 0:
                         # Set the probability of minimum bin to zero when sampling -- otherwise zero distance is sampled even for satellite galaxies with non-zero sfr 
                         for iparam in range(1, self.num_features_in):
-                            if self.num_features_in > iparam:
-                                mask = (x_last[:, 1, 1:] >= prob_threshold).any(axis=1)
-                                mask = mask & mask_all_batch
-                                x_last[:, iparam, 0] = self._set_to_zero(x_last[:,iparam,0], mask) 
-                        
+                            mask = (x_last[:, iparam, 1:] >= prob_threshold).any(axis=1) # (batch,)
+                            x_last[:, iparam, 0] = self._set_to_zero(x_last[:,iparam,0], mask) 
+                    
+                    x_last = self._set_to_zero(x_last, x_last < prob_threshold) # set the probability to zero if less than prob_threshold
+
                     x_last = x_last.reshape(-1, self.num_features_out) # (batch * num_features_in, num_features_out)
                     bin_indices = Categorical(probs=x_last).sample().float().view(-1, self.num_features_in) # (batch, num_features_in)
                     uniform_noise = torch.rand_like(bin_indices, device=context.device)  # (batch, num_features_in)
                     next_token = (bin_indices + uniform_noise) / self.num_features_out  # (batch, num_features_in)
 
                     next_token[:, 0] = self._set_to_zero(next_token[:, 0], next_token[:,0] < 1./ self.num_features_out) # strictly set the sfr to zero if sfr is less than 1/num_features_out 
+
+                    mask_all_batch = torch.ones(batch_size, dtype=torch.bool).to(context.device)
                     if t == 0:
                         if self.num_features_in > 1:
                             next_token[:, 1] = self._set_to_zero(next_token[:, 1], mask_all_batch) # Set the distance to zero for central
