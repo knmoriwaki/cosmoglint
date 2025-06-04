@@ -58,12 +58,13 @@ class TransformerBase(nn.Module):
         return torch.where(mask, zero_tensor, x)
 
     
-    def generate(self, context, seq=None, teacher_forcing_ratio=0.0, temperature=1.0, stop_criterion=None, prob_threshold=0):
+    def generate(self, context, seq=None, teacher_forcing_ratio=0.0, temperature=1.0, stop_criterion=None, prob_threshold=0, cutoff=False):
         # context: (batch, num_condition)
         batch_size = len(context)
 
         generated = torch.zeros(batch_size, self.max_length, self.num_features_in).to(context.device) # (batch, max_length, num_features_in)
-
+        mask_all_batch = torch.ones(batch_size, dtype=torch.bool).to(context.device)
+                    
         for t in range(self.max_length):
 
             if seq is not None and t < seq.size(1) and random.random() < teacher_forcing_ratio:
@@ -74,39 +75,39 @@ class TransformerBase(nn.Module):
 
                 x_last = x[:, -1, :, :] 
                 # last taken (batch, num_features_in, num_features_out)
+            
+                x_last = x_last / temperature
 
-                if self.num_features_out == 1:
-                    next_token = x
-                elif self.num_features_out == 2:
-                    # Beta distribution
-                    alpha = x[:,0] + 1e-4
-                    beta = x[:,1] + 1e-4
-                    beta_dist = Beta(alpha / temperature, beta / temperature)
-                    next_token = beta_dist.sample().unsqueeze(1)  # (batch, 1)
-                else:
-                    x_last = x_last / temperature
+                if t > 0:
+                    # Set the probability of minimum bin to zero when sampling -- otherwise zero distance is sampled even for satellite galaxies with non-zero sfr 
+                    for iparam in range(1, self.num_features_in):
+                        mask = (x_last[:, iparam, 1:] >= prob_threshold).any(axis=1) # (batch,)
+                        x_last[:, iparam, 0] = self._set_to_zero(x_last[:,iparam,0], mask) 
 
-                    if t > 0:
-                        # Set the probability of minimum bin to zero when sampling -- otherwise zero distance is sampled even for satellite galaxies with non-zero sfr 
-                        for iparam in range(1, self.num_features_in):
-                            mask = (x_last[:, iparam, 1:] >= prob_threshold).any(axis=1) # (batch,)
-                            x_last[:, iparam, 0] = self._set_to_zero(x_last[:,iparam,0], mask) 
-                    
-                    x_last = self._set_to_zero(x_last, x_last < prob_threshold) # set the probability to zero if less than prob_threshold
+                if t > 1 and cutoff: 
+                    # Set the probability for SFR bins above the previous SFR bin to zero
+                    # This is applied only from the second satellite galaxy
+                    previous_token_bin = (generated[:, t-1, 0] * self.num_features_out).long() + 1
+                    previous_token_bin = previous_token_bin.view(-1, 1) # (batch, 1)
+                    bin_indices = torch.arange(self.num_features_out, device=context.device).view(1, -1) # (1, num_features_out)
+                    mask = bin_indices > previous_token_bin # (batch, num_features_out)
+                    x_last[:, 0, :] = self._set_to_zero(x_last[:, 0, :], mask) # set the probability to zero for bins above the previous bin
+                
+                x_last = self._set_to_zero(x_last, x_last < prob_threshold) # set the probability to zero if less than prob_threshold
 
-                    x_last = x_last.reshape(-1, self.num_features_out) # (batch * num_features_in, num_features_out)
-                    bin_indices = Categorical(probs=x_last).sample().float().view(-1, self.num_features_in) # (batch, num_features_in)
-                    uniform_noise = torch.rand_like(bin_indices, device=context.device)  # (batch, num_features_in)
-                    next_token = (bin_indices + uniform_noise) / self.num_features_out  # (batch, num_features_in)
+                x_last = x_last.reshape(-1, self.num_features_out) # (batch * num_features_in, num_features_out)
+                bin_indices = Categorical(probs=x_last).sample().float().view(-1, self.num_features_in) # (batch, num_features_in)
+                uniform_noise = torch.rand_like(bin_indices, device=context.device)  # (batch, num_features_in)
+                next_token = (bin_indices + uniform_noise) / self.num_features_out  # (batch, num_features_in)
 
-                    next_token[:, 0] = self._set_to_zero(next_token[:, 0], next_token[:,0] < 1./ self.num_features_out) # strictly set the sfr to zero if sfr is less than 1/num_features_out 
+                next_token[:, 0] = self._set_to_zero(next_token[:, 0], next_token[:,0] < 1./ self.num_features_out) # strictly set the sfr to zero if sfr is less than 1/num_features_out 
 
-                    mask_all_batch = torch.ones(batch_size, dtype=torch.bool).to(context.device)
-                    if t == 0:
-                        if self.num_features_in > 1:
-                            next_token[:, 1] = self._set_to_zero(next_token[:, 1], mask_all_batch) # Set the distance to zero for central
-                        if self.num_features_in > 2:
-                            next_token[:, 2] = 0.5 + self._set_to_zero(next_token[:, 2], mask_all_batch) # Set the radial velocity to zero (i.e., 0.5 after normalization) for central
+                mask_all_batch = torch.ones(batch_size, dtype=torch.bool).to(context.device)
+                if t == 0:
+                    if self.num_features_in > 1:
+                        next_token[:, 1] = self._set_to_zero(next_token[:, 1], mask_all_batch) # Set the distance to zero for central
+                    if self.num_features_in > 2:
+                        next_token[:, 2] = 0.5 + self._set_to_zero(next_token[:, 2], mask_all_batch) # Set the radial velocity to zero (i.e., 0.5 after normalization) for central
 
             generated[:, t, :] = next_token # (batch, num_features_in)           
             #generated = torch.cat([generated, next_token], dim=1)
@@ -117,7 +118,7 @@ class TransformerBase(nn.Module):
 
         if seq is not None and teacher_forcing_ratio > 0:
             x = self(context, generated[:,:-1])
-        
+
         return generated, x
 
 class Transformer1(TransformerBase): # add logM at first in the sequence
@@ -146,13 +147,8 @@ class Transformer1(TransformerBase): # add logM at first in the sequence
 
         self.output_layer = nn.Linear(d_model, num_features_in*num_features_out) 
 
-        if num_features_out == 1:
-            self.out_activation = nn.Sigmoid()
-        elif num_features_out == 2:
-            self.out_activation = nn.Softplus()
-        else:
-            self.out_activation = nn.Softmax(dim=-1)
-            #self.out_activation = Sparsemax(dim=-1)
+        self.out_activation = nn.Softmax(dim=-1)
+        #self.out_activation = Sparsemax(dim=-1)
 
     def forward(self, context, x):
         # context: (batch, num_condition)
@@ -209,12 +205,7 @@ class Transformer2(TransformerBase): # embed context, position, and x together
 
         self.output_layer = nn.Linear(d_model, num_features_in*num_features_out)
 
-        if num_features_out == 1:
-            self.out_activation = nn.Sigmoid()
-        elif num_features_out == 2:
-            self.out_activation = nn.Softplus()
-        else:
-            self.out_activation = nn.Softmax(dim=-1)
+        self.out_activation = nn.Softmax(dim=-1)
     
     def forward(self, context, x):
         # context: (batch, num_condition)
@@ -274,12 +265,7 @@ class Transformer3(TransformerBase): # embed x and context together and then add
 
         self.output_layer = nn.Linear(d_model, num_features_in*num_features_out)
 
-        if num_features_out == 1:
-            self.out_activation = nn.Sigmoid()
-        elif num_features_out == 2:
-            self.out_activation = nn.Softplus()
-        else:
-            self.out_activation = nn.Softmax(dim=-1)
+        self.out_activation = nn.Softmax(dim=-1)
     
     def forward(self, context, x):
         # context: (batch, num_condition)

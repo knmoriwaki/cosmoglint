@@ -1,8 +1,9 @@
 **/__pycache__/
-dataset/
+**/test*.ipynb
 **/sub*.sh
 **/runs/
 **/output*/
 **/generated_data*/
 *.egg-info/
-scripts/create_mock.py
+dataset/
+scripts_lightcone/

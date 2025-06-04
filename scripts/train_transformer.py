@@ -38,7 +38,7 @@ def parse_args():
     parser.add_argument("--num_epochs", type=int, default=2)
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--dropout", type=float, default=0.0)
-    parser.add_argument("--use_sampler", action="store_true")
+    parser.add_argument("--sampler_weight_min", type=float, default=1, help="Minimum weight for the sampler, set to 1 to disable sampling")
     parser.add_argument("--save_freq", type=int, default=100)
 
     # model parameters
@@ -78,10 +78,10 @@ def train_model(args):
         # Large minimum weight (larger than ~1e-5: the maximum number of halo mass function at z = 2) means the rare samples will be sampled more frequently (could suffer from overfitting, but might be faster to converge)
         return WeightedRandomSampler(weights.tolist(), len(weights), replacement=True)
     
-    if args.use_sampler:
-        sampler = get_sampler(train_dataset.dataset.x[train_dataset.indices][:,0], weight_min=0.01)
+    if args.sampler_weight_min < 1:
+        sampler = get_sampler(train_dataset.dataset.x[train_dataset.indices][:,0], weight_min=args.sampler_weight_min)
         train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, sampler=sampler) 
-        sampler = get_sampler(val_dataset.dataset.x[val_dataset.indices][:,0], weight_min=0.01)
+        sampler = get_sampler(val_dataset.dataset.x[val_dataset.indices][:,0], weight_min=args.sampler_weight_min)
         val_dataloader = DataLoader(val_dataset, batch_size=args.batch_size, sampler=sampler)
     else:
         train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
@@ -118,28 +118,18 @@ def train_model(args):
         if weight is None:
             weight = torch.ones_like(target, dtype=torch.float32, device=target.device) # (batch, seq_length)
             
-        if num_features_out == 1:
-            loss = F.mse_loss(output, target, reduction='none')
-            #loss = loss.mul(mask).sum() / (mask.sum() + 1e-8)
-            loss = (loss * weight * mask).sum() / ( (weight * mask).sum() + 1e-8 )
-        elif num_features_out == 2:
-            alpha, beta = output[:, :, 0], output[:, :, 1]
-            beta_dist = Beta(alpha, beta)
-            log_prob = beta_dist.log_prob(target)
-            loss = - (log_prob * weight * mask).sum() / ( (weight * mask).sum() + 1e-8 ) # ignore padding except for the first one.
-        else:
-            target_bins = (target * num_features_out).long() # (batch, seq_length, num_features_in) [0, 1] -> [0, num_features_out-1]
-            target_bins = torch.clamp(target_bins, min=0, max=num_features_out - 1)
+        target_bins = (target * num_features_out).long() # (batch, seq_length, num_features_in) [0, 1] -> [0, num_features_out-1]
+        target_bins = torch.clamp(target_bins, min=0, max=num_features_out - 1)
 
-            output = output.view(-1, num_features_out) # (batch * seq_length * num_features_in, num_features_out)
-            target_bins = target_bins.view(-1) # (batch * seq_length * num_features_in, )
-            mask = mask.view(-1) # (batch * seq_length * num_features_in, )
-            weight = weight.view(-1) # (batch * seq_length * num_features_in, )
+        output = output.view(-1, num_features_out) # (batch * seq_length * num_features_in, num_features_out)
+        target_bins = target_bins.view(-1) # (batch * seq_length * num_features_in, )
+        mask = mask.view(-1) # (batch * seq_length * num_features_in, )
+        weight = weight.view(-1) # (batch * seq_length * num_features_in, )
 
-            log_prob = torch.log(output + 1e-8)
-            loss_nll = F.nll_loss(log_prob, target_bins, reduction='none') 
-            loss = (loss_nll * weight * mask).sum() / ( (weight * mask).sum() + 1e-8 )
-        
+        log_prob = torch.log(output + 1e-8)
+        loss_nll = F.nll_loss(log_prob, target_bins, reduction='none') 
+        loss = (loss_nll * weight * mask).sum() / ( (weight * mask).sum() + 1e-8 )
+
         return loss 
 
     fname_log = f"{args.output_dir}/log.txt"
@@ -148,7 +138,7 @@ def train_model(args):
         f.write(f"# loss loss_val\n")
 
     num_batches = len(train_dataloader)
-    for epoch in tqdm(range(args.num_epochs)):
+    for epoch in tqdm(range(args.num_epochs), file=sys.stderr):
         model.train()
 
         teacher_forcing_ratio = 1.
@@ -205,11 +195,10 @@ def train_model(args):
         if (epoch + 1) % args.save_freq == 0 or epoch + 1 == args.num_epochs: 
             fname = f"{args.output_dir}/model_ep{epoch+1}.pth"
             torch.save(model.state_dict(), fname)
-            print(f"# Model saved to {fname}")
+            tqdm.write(f"# Model saved to {fname}")
 
             fname = f"{args.output_dir}/model.pth"
             torch.save(model.state_dict(), fname)
-            print(f"# Model saved to {fname}")
 
 if __name__ == "__main__":
     args = parse_args()

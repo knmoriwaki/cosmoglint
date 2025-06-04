@@ -65,6 +65,12 @@ def create_mask(array, threshold):
     return mask
 
 def generate_galaxy_TransNF(args, logm, pos, vel):
+    """
+    args: args.gpu_id, args.model_dir, and args.threshold are used
+    logm: (num_halos, ), log mass of the halos
+    pos: (num_halos, 3), positions of the halo centers
+    vel: (num_halos, 3), velocities of the halo centers
+    """
 
     print("# Use Transformer-NF to generate galaxies")
 
@@ -72,7 +78,7 @@ def generate_galaxy_TransNF(args, logm, pos, vel):
     device = torch.device("cuda:{}".format(args.gpu_id) if torch.cuda.is_available() else "cpu")
 
     ### load Transformer
-    with open(f"{args.model_dir}/args.json", "r") as f:
+    with open("{}/args.json".format(args.model_dir), "r") as f:
         opt = json.load(f, object_hook=lambda d: argparse.Namespace(**d))
     print("opt: ", opt)
 
@@ -82,18 +88,18 @@ def generate_galaxy_TransNF(args, logm, pos, vel):
 
     model = my_model(opt)
     model.to(device)
-    model.load_state_dict(torch.load(f"{args.model_dir}/model.pth"))
+    model.load_state_dict(torch.load("{}/model.pth".format(args.model_dir)))
     model.eval()
     print(model)
 
     flow = my_flow_model(opt)
     flow.to(device)
-    flow.load_state_dict(torch.load(f"{args.model_dir}/flow.pth"))
+    flow.load_state_dict(torch.load("{}/flow.pth".format(args.model_dir)))
     flow.eval()
     print(flow)
 
     ### generate galaxies
-    print(f"# Generate galaxies (batch size: {opt.batch_size})")
+    print("# Generate galaxies (batch size: {:d})".format(opt.batch_size))
     logm = (logm - xmin[0]) / (xmax[0] - xmin[0])
     logm = torch.from_numpy(logm).float().to(device)
     
@@ -141,7 +147,7 @@ def generate_galaxy_TransNF(args, logm, pos, vel):
     generated = generated[mask] # (num_galaxies_valid, num_features)
 
     num_gal = len(flag_central)
-    print(f"# Number of valid galaxies: {num_gal}")
+    print("# Number of valid galaxies: {:d}".format(num_gal))
     
     ### Denormalize
     generated = generated * (xmax[1:1+num_features] - xmin[1:1+num_features]) + xmin[1:1+num_features]
@@ -154,6 +160,13 @@ def generate_galaxy_TransNF(args, logm, pos, vel):
     return generated, pos_central, vel_central, flag_central
 
 def generate_galaxy_two_step(args, logm, pos, vel):
+    """
+    args: args.gpu_id, args.model_dir, and args.threshold are used
+    logm: (num_halos, ), log mass of the halos
+    pos: (num_halos, 3), positions of the halo centers
+    vel: (num_halos, 3), velocities of the halo centers
+    """
+
 
     print("# Use Transformer to generate SFR")
 
@@ -163,7 +176,7 @@ def generate_galaxy_two_step(args, logm, pos, vel):
     device = torch.device("cuda:{}".format(args.gpu_id) if torch.cuda.is_available() else "cpu")
 
     ### load Transformer
-    with open(f"{args.model_dir}/args.json", "r") as f:
+    with open("{}/args.json".format(args.model_dir), "r") as f:
         opt = json.load(f, object_hook=lambda d: argparse.Namespace(**d))
     print("opt: ", opt)
 
@@ -174,12 +187,12 @@ def generate_galaxy_two_step(args, logm, pos, vel):
     model = my_model(opt)
     model.to(device)
 
-    model.load_state_dict(torch.load(f"{args.model_dir}/model.pth"))
+    model.load_state_dict(torch.load("{}/model.pth".format(args.model_dir)))
     model.eval()
     print(model)
 
     ### generate SFR
-    print(f"# Generate SFR (batch size: {opt.batch_size})")
+    print("# Generate SFR (batch size: {:d})".format(opt.batch_size))
     logm = (logm - xmin[0]) / (xmax[0] - xmin[0])
     logm = torch.from_numpy(logm).float().to(device)
     
@@ -231,10 +244,10 @@ def generate_galaxy_two_step(args, logm, pos, vel):
     x_NN = x_NN[mask] # (num_galaxies_valid, 2)
 
     num_gal = len(x_NN)
-    print(f"# Number of valid galaxies: {num_gal}")
+    print("# Number of valid galaxies: {:d}".format(num_gal))
     
     ### Load NN
-    with open(f"{args.NN_model_dir}/args.json", "r") as f:
+    with open("{}/args.json".format(args.NN_model_dir), "r") as f:
         opt_NN = json.load(f, object_hook=lambda d: argparse.Namespace(**d))
     print("opt_NN: ", opt_NN)
 
@@ -244,12 +257,12 @@ def generate_galaxy_two_step(args, logm, pos, vel):
         model_NN = my_flow_model(opt_NN)
 
     model_NN.to(device)
-    model_NN.load_state_dict(torch.load(f"{args.NN_model_dir}/model.pth"))
+    model_NN.load_state_dict(torch.load("{}/model.pth".format(args.NN_model_dir)))
     model_NN.eval()
     print(model_NN)
 
     ### Generate other properties
-    print(f"# Generate other properties (batch size: {opt_NN.batch_size})")
+    print("# Generate other properties (batch size: {:d})".format(opt_NN.batch_size))
     num_batch = (num_gal + opt_NN.batch_size - 1) // opt_NN.batch_size
     generated_NN = []
     for batch_idx in tqdm(range(num_batch)):
@@ -280,6 +293,12 @@ def generate_galaxy_two_step(args, logm, pos, vel):
 
 
 def generate_galaxy(args, logm, pos, vel):
+    """
+    args: args.gpu_id, args.model_dir, and args.threshold are used
+    logm: (num_halos, ), log mass of the halos
+    pos: (num_halos, 3), positions of the halo centers
+    vel: (num_halos, 3), velocities of the halo centers
+    """
 
     print("# Use Transformer to generate SFR")
 
@@ -287,7 +306,7 @@ def generate_galaxy(args, logm, pos, vel):
     device = torch.device("cuda:{}".format(args.gpu_id) if torch.cuda.is_available() else "cpu")
 
     ### load Transformer
-    with open(f"{args.model_dir}/args.json", "r") as f:
+    with open("{}/args.json".format(args.model_dir), "r") as f:
         opt = json.load(f, object_hook=lambda d: argparse.Namespace(**d))
     print("opt: ", opt)
 
@@ -298,12 +317,12 @@ def generate_galaxy(args, logm, pos, vel):
     model = my_model(opt)
     model.to(device)
 
-    model.load_state_dict(torch.load(f"{args.model_dir}/model.pth"))
+    model.load_state_dict(torch.load("{}/model.pth".format(args.model_dir)))
     model.eval()
     print(model)
 
     ### generate galaxies
-    print(f"# Generate galaxies (batch size: {opt.batch_size})")
+    print("# Generate galaxies (batch size: {:d})".format(opt.batch_size))
     logm = (logm - xmin[0]) / (xmax[0] - xmin[0])
     logm = torch.from_numpy(logm).float().to(device)
     
@@ -315,7 +334,7 @@ def generate_galaxy(args, logm, pos, vel):
         start = batch_idx * opt.batch_size 
         logm_batch = logm[start: start + opt.batch_size] # (batch_size, num_features)
         with torch.no_grad():
-            generated_batch, _ = model.generate(logm_batch, prob_threshold=prob_threshold, stop_criterion=stop_criterion) # (batch_size, seq_length, num_features)
+            generated_batch, _ = model.generate(logm_batch, prob_threshold=prob_threshold, stop_criterion=stop_criterion, cutoff=True) # (batch_size, seq_length, num_features)
         generated.append(generated_batch)
     generated = torch.cat(generated, dim=0) # (num_halos, seq_length, num_features)
 
@@ -355,7 +374,7 @@ def generate_galaxy(args, logm, pos, vel):
         else:
             generated[:,i] = 10 ** generated[:,i]
     
-    print(f"# Number of valid galaxies: {len(generated)}")
+    print("# Number of valid galaxies: {:d}".format(len(generated)))
     
     return generated, pos_central, vel_central, flag_central
 
