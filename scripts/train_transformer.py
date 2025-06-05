@@ -39,6 +39,7 @@ def parse_args():
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--dropout", type=float, default=0.0)
     parser.add_argument("--sampler_weight_min", type=float, default=1, help="Minimum weight for the sampler, set to 1 to disable sampling")
+    parser.add_argument("--lambda_penalty_loss", type=float, default=0, help="Coefficient for the penalty loss")
     parser.add_argument("--save_freq", type=int, default=100)
 
     # model parameters
@@ -57,7 +58,7 @@ def train_model(args):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
-    device = torch.device(f"cuda:{args.gpu_id}" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda:{}".format(args.gpu_id) if torch.cuda.is_available() else "cpu")
 
     ### Load data
     norm_params = np.loadtxt(args.norm_param_file)
@@ -89,8 +90,8 @@ def train_model(args):
 
     _, args.num_features_in = train_dataset[0][1].shape
     
-    print(f"# Training data: {len(train_dataset)}")
-    print(f"# Validation data: {len(val_dataset)}")
+    print("# Training data: {:d}".format(len(train_dataset)))
+    print("# Validation data: {:d}".format(len(val_dataset)))
 
     ### Define model
     model = my_model(args)
@@ -99,10 +100,10 @@ def train_model(args):
 
     ### Save arguments
     args.norm_params = norm_params.tolist()
-    fname = f"{args.output_dir}/args.json"
+    fname = "{}/args.json".format(args.output_dir)
     with open(fname, "w") as f:
         json.dump(vars(args), f)
-    print(f"# Arguments saved to {fname}")
+    print("# Arguments saved to {}".format(fname))
 
     ### Training
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-5)
@@ -111,94 +112,109 @@ def train_model(args):
     def loss_func(output, target, mask, weight=None):
         # output: (batch, seq_length, num_features_in, num_features_out)
         # target: (batch, seq_length, num_features_in)
-        # mask: (batch, ) or (batch, seq_length) or (batch, seq_length, num_features_in)
-        # weight: (batch, ) or (batch, seq_length) or (batch, seq_length, num_features_in)
+        # mask: (batch, seq_length, num_features_in)
+        # weight: (batch, seq_length, num_features_in)
 
         batch_size, seq_length, num_features_in, num_features_out = output.shape
         if weight is None:
             weight = torch.ones_like(target, dtype=torch.float32, device=target.device) # (batch, seq_length)
-            
+
+        weight = mask * weight
+
+        log_prob = torch.log( output + 1e-8 )    
         target_bins = (target * num_features_out).long() # (batch, seq_length, num_features_in) [0, 1] -> [0, num_features_out-1]
         target_bins = torch.clamp(target_bins, min=0, max=num_features_out - 1)
+        
+        log_prob_flatten = log_prob.view(-1, num_features_out) # (batch * seq_length * num_features_in, num_features_out)
+        target_bins_flatten = target_bins.view(-1) # (batch * seq_length * num_features_in, )
+        weight_flatten = weight.view(-1) # (batch * seq_length * num_features_in, )
 
-        output = output.view(-1, num_features_out) # (batch * seq_length * num_features_in, num_features_out)
-        target_bins = target_bins.view(-1) # (batch * seq_length * num_features_in, )
-        mask = mask.view(-1) # (batch * seq_length * num_features_in, )
-        weight = weight.view(-1) # (batch * seq_length * num_features_in, )
+        loss_nll = F.nll_loss(log_prob_flatten, target_bins_flatten, reduction='none') 
+        loss = (loss_nll * weight_flatten).sum() / ( (weight_flatten).sum() + 1e-8 )
 
-        log_prob = torch.log(output + 1e-8)
-        loss_nll = F.nll_loss(log_prob, target_bins, reduction='none') 
-        loss = (loss_nll * weight * mask).sum() / ( (weight * mask).sum() + 1e-8 )
+        return loss
 
-        return loss 
+    def loss_func_penalty(output, target_bins, mask, weight=None):
 
-    fname_log = f"{args.output_dir}/log.txt"
+        batch_size, seq_length, num_features_in, num_features_out = output.shape
+        bin_width = 1.0 / num_features_out
+        if weight is None:
+            weight = torch.ones_like(target_bins, dtype=torch.float32, device=target_bins.device)
+
+        # Suppress the probabilites of bins above the previous target bin
+        # This is applied to the second satellite and onwards
+        prev_target_bins = target_bins[:, 1:-1, 0] # (batch, seq_length-2)
+        bin_idx = torch.arange(num_features_out, device=target_bins.device)
+        mask_penalty = (bin_idx[None, None, :] > prev_target_bins[:, :, None]).float() # (batch, seq_length-2, num_features_out)
+        loss_penalty = ( output[:, 2:, 0, :] * mask_penalty * bin_width ).sum(dim=-1) # (batch, seq_length-2)
+        loss_penalty = ( loss_penalty * weight[:, 2:, 0] ).sum() / ( (weight[:, 2:, 0]).sum() + 1e-8 )
+
+        return loss_penalty
+
+    fname_log = "{}/log.txt".format(args.output_dir)
 
     with open(fname_log, "w") as f:
         f.write(f"# loss loss_val\n")
 
-    num_batches = len(train_dataloader)
-    for epoch in tqdm(range(args.num_epochs), file=sys.stderr):
-        model.train()
-
-        teacher_forcing_ratio = 1.
-        #teacher_forcing_ratio = 1. if epoch < 10 else 0.
-        #teacher_forcing_ratio = 1. - epoch / args.num_epochs
-
-        ### curriculum learning
-        #temperature = 1 - np.exp( -0.3 * epoch )
-        #sampler = get_sampler(train_dataset.dataset.x[train_dataset.indices][:,0], temperature=temperature)
-        #train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, sampler=sampler)
-
-        for count, (context, seq, mask) in enumerate(train_dataloader):
-            context = context.to(device)  # (batch, num_condition)   
-            seq = seq.to(device)     # (batch, max_length, num_features_in)
-            mask = mask.to(device)   # (batch, max_length)
-            #weight = (6.7 * context[:,0]).pow(10).detach()
-            #weight = weight / weight.mean()
-            
-            optimizer.zero_grad()
-
-            input_seq = seq[:, :-1]
-            output = model(context, input_seq) # (batch, max_length, num_features_in, num_features_out)
-            #_, output = model.generate(context, seq=seq, teacher_forcing_ratio=teacher_forcing_ratio) 
-            # output: (batch, max_length, num_features_in, num_features_out)
-            
-            loss = loss_func(output, seq, mask) #, weight=weight)
-
-            loss.backward()
-            optimizer.step()
-
-            model.eval()
-            for context_val, seq_val, mask_val in val_dataloader:
-                with torch.no_grad():
-                    context_val = context_val.to(device)
-                    seq_val = seq_val.to(device)
-                    mask_val = mask_val.to(device)
-                    #weight = (6.7 * context_val[:,0]).pow(10).detach()
-                    
-                    input_seq_val = seq_val[:, :-1]
-                    output_val = model(context_val, input_seq_val)
-                    loss_val = loss_func(output_val, seq_val, mask_val)
-                    
-                    break # show one batch result only
+        num_batches = len(train_dataloader)
+        for epoch in tqdm(range(args.num_epochs), file=sys.stderr):
             model.train()
 
-            epoch_now = epoch + count / num_batches
-            with open(fname_log, "a") as f:
-                f.write(f"{epoch_now:.8f} {loss.item():.4f} {loss_val.item():.4f}\n")
+            for count, (context, seq, mask) in enumerate(train_dataloader):
+                context = context.to(device)  # (batch, num_condition)   
+                seq = seq.to(device)     # (batch, max_length, num_features_in)
+                mask = mask.to(device)   # (batch, max_length)
+                #weight = (6.7 * context[:,0]).pow(10).detach()
+                #weight = weight / weight.mean()
+                
+                optimizer.zero_grad()
 
-        scheduler.step()
-        
-        # save model
-        
-        if (epoch + 1) % args.save_freq == 0 or epoch + 1 == args.num_epochs: 
-            fname = f"{args.output_dir}/model_ep{epoch+1}.pth"
-            torch.save(model.state_dict(), fname)
-            tqdm.write(f"# Model saved to {fname}")
+                input_seq = seq[:, :-1]
+                output = model(context, input_seq) # (batch, max_length, num_features_in, num_features_out)
+                #_, output = model.generate(context, seq=seq, teacher_forcing_ratio=teacher_forcing_ratio) 
+                # output: (batch, max_length, num_features_in, num_features_out)
+                
+                loss = loss_func(output, seq, mask) #, weight=weight)
 
-            fname = f"{args.output_dir}/model.pth"
-            torch.save(model.state_dict(), fname)
+                loss_penalty = args.lambda_penalty_loss * loss_func_penalty(output, seq, mask)
+                loss += loss_penalty
+
+                loss.backward()
+                optimizer.step()
+
+                model.eval()
+                for context_val, seq_val, mask_val in val_dataloader:
+                    with torch.no_grad():
+                        context_val = context_val.to(device)
+                        seq_val = seq_val.to(device)
+                        mask_val = mask_val.to(device)
+                        #weight = (6.7 * context_val[:,0]).pow(10).detach()
+                        
+                        input_seq_val = seq_val[:, :-1]
+                        output_val = model(context_val, input_seq_val)
+                        loss_val = loss_func(output_val, seq_val, mask_val)
+
+                        loss_penalty_val = args.lambda_penalty_loss * loss_func_penalty(output_val, seq_val, mask_val)
+                        loss_val += loss_penalty_val
+                    
+                        break # show one batch result only
+                model.train()
+
+                epoch_now = epoch + count / num_batches
+                
+                f.write("{:.8f} {:.4f} {:.4f} {:.4f} {:.4f}\n".format(epoch_now, loss.item(), loss_val.item(), loss_penalty.item(), loss_penalty_val.item()))
+
+            scheduler.step()
+            
+            # save model
+            
+            if (epoch + 1) % args.save_freq == 0 or epoch + 1 == args.num_epochs: 
+                fname = "{}/model_ep{:d}.pth".format(args.output_dir, epoch+1)
+                torch.save(model.state_dict(), fname)
+                tqdm.write("# Model saved to {}".format(fname))
+
+                fname = "{}/model.pth".format(args.output_dir)
+                torch.save(model.state_dict(), fname)
 
 if __name__ == "__main__":
     args = parse_args()

@@ -110,7 +110,7 @@ python train_transformer.py --data_path [data_path] --norm_param_file [norm_para
 ```
 
 Important options:
-- `--data_path`: path to the training data. Data is an hdf5 file that contains properties of halos (`HaloMass`, `NumSubgroups`, `Offset`) and galaxies (`SubgroupSFR`, `SubgroupDist`, `SubgroupVrad`, `SubgroupVtan`), where `NumSubgroups` and `Offset` are used for determining host halos of galaxies.
+- `--data_path`: Path(s) to the training data. Data is an hdf5 file that contains properties of halos (`HaloMass`, `NumSubgroups`, `Offset`) and galaxies (`SubgroupSFR`, `SubgroupDist`, `SubgroupVrad`, `SubgroupVtan`), where `NumSubgroups` and `Offset` are used for determining host halos of galaxies. Multiple files can be passed.
 - `--norm_param_file`: Path to the normalization parameter file. The file contains minimum (1st column) and maximum (2nd column) values for the input and output parameters.
 - `--use_dist`: If set, the distance to halo is predicted
 - `--use_vel`: If set, relative velocity to halo is predicted
@@ -126,7 +126,8 @@ Other options:
 - `--num_epochs`: Number of training epochs (default: 2).
 - `--lr`: Learning rate for the optimizer (default: 1e-3).
 - `--dropout`: Dropout rate used in the model (default: 0.0).
-- `--use_sampler`: Enables a sampler that balances the training data based on halo's primary property (e.g., halo mass).
+- `--sampler_weight_min`: Minimum weight for the sampler. Set to < 1 to use a sampler that balances the training data based on halo's primary property (e.g., halo mass), otherwise the sampler is not used. 
+- `--lambda_penalty_loss`: Coefficient for the penalty loss.
 - `--save_freq`: Frequency (in epochs) at which the model is saved during training (default: 100).
 
 - `--model_name`: Name of the model architecture to use (default: "transformer1"). 
@@ -172,3 +173,8 @@ Other options:
 
 - `plot_transformer.ipynb`: visualize training results
 - `plot_mock.ipynb`: visualize created mock data
+
+## Other models
+
+- `transformer`: Default model. Transformer outputs one-hot vectors that represent the probability distributions of parameters.
+- `transformer_nf`: A normalizing flow samples galaxies conditioned on the output of Transformer.
