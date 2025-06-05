@@ -10,8 +10,6 @@ from tqdm import tqdm
 
 import numpy as np
 
-import numpy as np
-
 import torch
 
 def save_catalog_data(pos_list, value, args, output_fname):
@@ -294,7 +292,7 @@ def generate_galaxy_two_step(args, logm, pos, vel):
 
 def generate_galaxy(args, logm, pos, vel):
     """
-    args: args.gpu_id, args.model_dir, and args.threshold are used
+    args: args.gpu_id, args.model_dir, args.threshold, and args.prob_threshold are used
     logm: (num_halos, ), log mass of the halos
     pos: (num_halos, 3), positions of the halo centers
     vel: (num_halos, 3), velocities of the halo centers
@@ -327,14 +325,13 @@ def generate_galaxy(args, logm, pos, vel):
     logm = torch.from_numpy(logm).float().to(device)
     
     num_batch = (len(logm) + opt.batch_size - 1) // opt.batch_size
-    prob_threshold = 1e-5
     stop_criterion = ( np.log10(args.threshold) - xmin[1] ) / (xmax[1] - xmin[1]) # stop criterion for SFR
     generated = []
     for batch_idx in tqdm(range(num_batch)):
         start = batch_idx * opt.batch_size 
         logm_batch = logm[start: start + opt.batch_size] # (batch_size, num_features)
         with torch.no_grad():
-            generated_batch, _ = model.generate(logm_batch, prob_threshold=prob_threshold, stop_criterion=stop_criterion, cutoff=True) # (batch_size, seq_length, num_features)
+            generated_batch, _ = model.generate(logm_batch, prob_threshold=args.prob_threshold, stop_criterion=stop_criterion) # (batch_size, seq_length, num_features)
         generated.append(generated_batch)
     generated = torch.cat(generated, dim=0) # (num_halos, seq_length, num_features)
 
@@ -377,43 +374,3 @@ def generate_galaxy(args, logm, pos, vel):
     print("# Number of valid galaxies: {:d}".format(len(generated)))
     
     return generated, pos_central, vel_central, flag_central
-
-
-def load_old_plc(filename):
-    import struct
-
-    plc_struct_format = "<Q d ddd ddd ddddd"  # Q=uint64, d=double, little-endian
-    plc_size = struct.calcsize(plc_struct_format)
-
-    M_list = []
-    th_list = []
-    ph_list = []
-    vl_list = []
-    zo_list = []
-    with open(filename, "rb") as f:
-        while True:
-            dummy_bytes = f.read(4)
-            if not dummy_bytes:
-                break  # EOF
-            dummy = struct.unpack("<i", dummy_bytes)[0]
-
-            plc_bytes = f.read(dummy)
-            if len(plc_bytes) != dummy:
-                break  # 不完全な読み込み
-
-            data = struct.unpack(plc_struct_format, plc_bytes)
-            (
-                id, z, x1, x2, x3, v1, v2, v3,
-                M, th, ph, vl, zo
-            ) = data
-
-            dummy2_bytes = f.read(4)
-            dummy2 = struct.unpack("<i", dummy2_bytes)[0]
-
-            M_list.append(M)
-            th_list.append(th)
-            ph_list.append(ph)
-            vl_list.append(vl)
-            zo_list.append(zo)
-    
-    return np.array(M_list), np.array(th_list), np.array(ph_list), np.array(vl_list), np.array(zo_list)

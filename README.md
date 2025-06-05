@@ -39,7 +39,7 @@ python train_transformer.py --data_path [data_path] --norm_param_file [norm_para
 ```
 
 Options:
-- `--data_path`: path to the training data. Data is an hdf5 file that contains properties of halos (`HaloMass`, `NumSubgroups`, `Offset`) and galaxies (`SubgroupSFR`, `SubgroupDist`, `SubgroupVrad`, `SubgroupVtan`), where `NumSubgroups` and `Offset` are used for determining host halos of galaxies.
+- `--data_path`: Path(s) to the training data. Data is an hdf5 file that contains properties of halos (`HaloMass`, `NumSubgroups`, `Offset`) and galaxies (`SubgroupSFR`, `SubgroupDist`, `SubgroupVrad`, `SubgroupVtan`), where `NumSubgroups` and `Offset` are used for determining host halos of galaxies. Multiple files can be passed.
 - `--norm_param_file`: Path to the normalization parameter file. The file contains minimum (1st column) and maximum (2nd column) values for the input and output parameters.
 - `--use_dist`: If set, the distance to halo is predicted
 - `--use_vel`: If set, relative velocity to halo is predicted
@@ -52,7 +52,7 @@ python create_data_cube.py --input_fname [input_fname] --model_dir [model_dir]
 ```
 
 Options:
-- `--input_fname`: Path to the halo catalog. Text file that contains halo mass [Msun] in log scale (1st column), comving positions [Mpc/h] (2nd to 4th columns), and velocities [km/s] (5th to 8th columns) and catalog in [Pinocchio](https://github.com/pigimonaco/Pinocchio) format are supported.
+- `--input_fname`: Path to the halo catalog. Text file that contains the logarithmic total halo mass [Msun] (1st column), comving positions [Mpc/h] (2nd to 4th columns), and velocities [km/s] (5th to 8th columns) and catalog in [Pinocchio](https://github.com/pigimonaco/Pinocchio) format are supported.
 - `--model_dir`: Path to a directory containing the trained model (`model.pth` and `args.json`). If not set, column 7 of the input file is used as intensity.
 
 ## Visualization
@@ -60,7 +60,7 @@ Options:
 Example Jupyter notebooks are available in the `notebooks/` directory:
 
 - `plot_transformer.ipynb`: visualize training results
-- `plot_mock.ipynb`: visualize created mock data
+- `plot_data_cube.ipynb`: visualize created data cube
 
 
 ## Citation

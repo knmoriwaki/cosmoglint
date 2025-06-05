@@ -95,7 +95,7 @@ Options:
 
 ## Scripts and notebook
 
-Scripts in `scripts` can be used for training and mock generation. Notebooks in `notebooks` can be used for visualization.
+The scripts in `scripts` can be used for training and mock generation. Notebooks in `notebooks` can be used for visualization.
 
 To use scripts and notebooks, install additional libraries:
 ```bash
@@ -106,6 +106,7 @@ pip install -r requirements.txt
 
 Example:
 ```bash
+cd scripts
 python train_transformer.py --data_path [data_path] --norm_param_file [norm_param_file] --use_dist --use_vel
 ```
 
@@ -140,10 +141,11 @@ Note: `num_features_in` is automatically determined from the shape of dataset
 
 ---
 
-### Create mock data
+### Create data cube
 
 Example:
 ```bash
+cd scripts
 python create_data_cube.py --input_fname [input_fname] --model_dir [model_dir] 
 ```
 
@@ -169,10 +171,43 @@ Other options:
 
 ---
 
+### Create mock data
+
+After training with multiple redshift data, you can create a mock data.
+
+Example:
+```bash
+cd scripts_lightcone
+python create_lightcone.py --input_fname [input_fname] --model_dir [model_dir]
+```
+
+Important options:
+- `--input_fname`: Path to the lightcone data. Pinocchio format is supported.
+- `--output_fname`: Output filename (HDF5 format).
+- `--model_dir`: Path to a directory containing the directories of trained model. The name of the directories to be used for each redshift bin is hardcoded in `lightcone_utils.py`.
+- `--redshift_space`: If set, generate output in redshift space.
+- `--side_length`, `--angular_resolution`: Angular size and resolution (arcsec) of the simulated map.
+- `--fmin`,`--fmax`: Frequency range [GHz] for the mock cube.
+- `--R`: Spectral resolution 
+
+Other options:
+- `--seed`: Random seed for reproducibility (default: 12345).
+- `--NN_model_dir`: Path to the directory containing the neural network model for intensity prediction.
+- `--sigma`: Log-normal scatter [dex] added to the luminosity–SFR relation.
+- `--gen_both`: If set, generate both real and redshift space data.
+- `--redshift_min`, --redshift_max: Minimum and maximum redshift range for the mock data.
+- `--logm_min`: Minimum log halo mass for selecting galaxies.
+- `--threshold`: Minimum SFR threshold for emission line generation.
+- `--gen_catalog`: If set, generate a galaxy catalog with SFR greater than --catalog_threshold.
+- `--catalog_threshold`: SFR threshold for inclusion in the catalog.
+
+---
+
 ## Notebooks
 
 - `plot_transformer.ipynb`: visualize training results
-- `plot_mock.ipynb`: visualize created mock data
+- `plot_data_cube.ipynb`: visualize created data cube
+- `plot_lightcone.ipynb`: visualize created light cone mock
 
 ## Other models
 
