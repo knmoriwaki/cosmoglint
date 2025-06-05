@@ -58,7 +58,7 @@ class TransformerBase(nn.Module):
         return torch.where(mask, zero_tensor, x)
 
     
-    def generate(self, context, seq=None, teacher_forcing_ratio=0.0, temperature=1.0, stop_criterion=None, prob_threshold=0, cutoff=False):
+    def generate(self, context, seq=None, teacher_forcing_ratio=0.0, temperature=1.0, stop_criterion=None, prob_threshold=0, cutoff=True):
         # context: (batch, num_condition)
         batch_size = len(context)
 
@@ -87,12 +87,15 @@ class TransformerBase(nn.Module):
                 if t > 1 and cutoff: 
                     # Set the probability for SFR bins above the previous SFR bin to zero
                     # This is applied only from the second satellite galaxy
-                    previous_token_bin = (generated[:, t-1, 0] * self.num_features_out).long() + 1
+                    previous_token_bin = (generated[:, t-1, 0] * self.num_features_out).long() + 10
+                    # use [+1] to avoid the bins just above the previous SFR
+                    # use [+n] to have larger buffer
                     previous_token_bin = previous_token_bin.view(-1, 1) # (batch, 1)
                     bin_indices = torch.arange(self.num_features_out, device=context.device).view(1, -1) # (1, num_features_out)
                     mask = bin_indices > previous_token_bin # (batch, num_features_out)
+                    mask = mask & (x_last[:, 0, :] >= prob_threshold) # (batch, num_features_out)
                     x_last[:, 0, :] = self._set_to_zero(x_last[:, 0, :], mask) # set the probability to zero for bins above the previous bin
-                
+            
                 x_last = self._set_to_zero(x_last, x_last < prob_threshold) # set the probability to zero if less than prob_threshold
 
                 x_last = x_last.reshape(-1, self.num_features_out) # (batch * num_features_in, num_features_out)
@@ -110,8 +113,7 @@ class TransformerBase(nn.Module):
                         next_token[:, 2] = 0.5 + self._set_to_zero(next_token[:, 2], mask_all_batch) # Set the radial velocity to zero (i.e., 0.5 after normalization) for central
 
             generated[:, t, :] = next_token # (batch, num_features_in)           
-            #generated = torch.cat([generated, next_token], dim=1)
-
+            
             if stop_criterion is not None:
                 if torch.all(next_token[:,0] < stop_criterion):
                     return generated, x
@@ -178,9 +180,10 @@ class Transformer1(TransformerBase): # add logM at first in the sequence
     
         # output layer
         x = self.output_layer(x)  # (batch, seq_length + 1, num_features_in * num_features_out)
-        x = self.out_activation(x)
-
+        
         x = x.view(batch_size, total_seq_length, self.num_features_in, -1) # (batch, seq_length + 1, num_features_in, num_features_out)
+
+        x = self.out_activation(x)
 
         return x
 
@@ -238,9 +241,10 @@ class Transformer2(TransformerBase): # embed context, position, and x together
     
         # output layer
         x = self.output_layer(x)  # (batch, seq_length+1, num_features_in * num_features_out)
-        x = self.out_activation(x)
 
         x = x.view(batch_size, seq_length+1, self.num_features_in, -1) # (batch, seq_length+1, num_features_in, num_features_out)
+        
+        x = self.out_activation(x)
 
         return x
 
@@ -298,10 +302,12 @@ class Transformer3(TransformerBase): # embed x and context together and then add
         x = self.decoder(x, memory=dummy_memory, tgt_mask=causal_mask)  # (batch, seq_length+1, d_model)
     
         # output layer
-        x = self.output_layer(x)  # (batch, seq_length+1, num_features_out)
-        x = self.out_activation(x)
+        x = self.output_layer(x)  # (batch, seq_length+1, num_features_in * num_features_out)
 
         x = x.view(batch_size, seq_length+1, self.num_features_in, -1)
+        # (batch, seq_length+1, num_features_in, num_features_out)
+
+        x = self.out_activation(x)
 
         return x
 
