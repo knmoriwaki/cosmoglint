@@ -363,7 +363,7 @@ def plot_mean(frequency, intensity, intensity_line, title=None, lines_to_show=li
         plt.xscale("log")
     plt.ylim(ylim)
     
-def show_map(frequency, intensity, intensity_line, side_length, lines_to_show=line_names, dy=1, use_log=False, smoothing=0, noise_sigma=0):
+def show_map(frequency, intensity, intensity_line, side_length, lines_to_show=line_names, dy=1, log_scale=False, smoothing=0, noise_sigma=0):
     """
     show intensity map in x-z plane
     input:
@@ -372,7 +372,7 @@ def show_map(frequency, intensity, intensity_line, side_length, lines_to_show=li
         intensity_line: (Nline, Nx, Ny, Nf) intensity [Jy/sr]
         side_length: side length [arcsec]
         lines_to_show: list of line names to show
-        use_log: if True, use log scale for intensity
+        log_scale: if True, use log scale for intensity
         smoothing: smoothing scale
     """
 
@@ -399,10 +399,10 @@ def show_map(frequency, intensity, intensity_line, side_length, lines_to_show=li
         tick_positions = interpolator(tick_values)
         plt.xticks(ticks=tick_positions, labels=tick_values)
 
-    def show_a_map(imap, map, side_length=side_length, iy=0, dy=1, vmin=None, vmax=None, label=None, use_log=use_log):
+    def show_a_map(imap, map, side_length=side_length, iy=0, dy=1, vmin=None, vmax=None, label=None, log_scale=log_scale):
         plt.subplot2grid((Nmap,1), (imap,0))
         map_xz = map[:, iy:iy+dy, :].sum(axis=1)
-        if use_log: map_xz = np.log10(map_xz)
+        if log_scale: map_xz = np.log10(map_xz)
         if smoothing > 0:
             map_xz = gaussian_filter(map_xz, sigma=smoothing)
         cmap = plt.cm.viridis
