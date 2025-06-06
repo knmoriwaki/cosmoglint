@@ -5,4 +5,5 @@
 **/output*/
 **/generated_data*/
 *.egg-info/
+scripts/param_files/
 dataset/

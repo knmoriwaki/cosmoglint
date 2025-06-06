@@ -67,6 +67,7 @@ def parse_args():
     ### Generative model parameters
     parser.add_argument("--model_dir", type=str, default=None, help="The directory of the model. If not given, use 4th column as intensity.")
     parser.add_argument("--NN_model_dir", type=str, default=None, help="The directory of the NN model.") 
+    parser.add_argument("--param_dir", type=str, default=None, help="The directory of the parameter files")
 
     return parser.parse_args()
 

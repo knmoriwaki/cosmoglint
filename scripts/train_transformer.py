@@ -36,7 +36,7 @@ def parse_args():
     parser.add_argument("--train_ratio", type=float, default=0.9)
     parser.add_argument("--batch_size", type=int, default=128)
     parser.add_argument("--num_epochs", type=int, default=2)
-    parser.add_argument("--lr", type=float, default=1e-3)
+    parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--dropout", type=float, default=0.0)
     parser.add_argument("--sampler_weight_min", type=float, default=1, help="Minimum weight for the sampler, set to 1 to disable sampling")
     parser.add_argument("--lambda_penalty_loss", type=float, default=0, help="Coefficient for the penalty loss")
@@ -59,6 +59,7 @@ def train_model(args):
     torch.backends.cudnn.benchmark = False
 
     device = torch.device("cuda:{}".format(args.gpu_id) if torch.cuda.is_available() else "cpu")
+    print("# Using device: {}".format(device))
 
     ### Load data
     norm_params = np.loadtxt(args.norm_param_file)
@@ -124,10 +125,10 @@ def train_model(args):
         log_prob = torch.log( output + 1e-8 )    
         target_bins = (target * num_features_out).long() # (batch, seq_length, num_features_in) [0, 1] -> [0, num_features_out-1]
         target_bins = torch.clamp(target_bins, min=0, max=num_features_out - 1)
-        
-        log_prob_flatten = log_prob.view(-1, num_features_out) # (batch * seq_length * num_features_in, num_features_out)
-        target_bins_flatten = target_bins.view(-1) # (batch * seq_length * num_features_in, )
-        weight_flatten = weight.view(-1) # (batch * seq_length * num_features_in, )
+
+        log_prob_flatten = log_prob.contiguous().view(-1, num_features_out) # (batch * seq_length * num_features_in, num_features_out)
+        target_bins_flatten = target_bins.contiguous().view(-1) # (batch * seq_length * num_features_in, )
+        weight_flatten = weight.contiguous().view(-1) # (batch * seq_length * num_features_in, )
 
         loss_nll = F.nll_loss(log_prob_flatten, target_bins_flatten, reduction='none') 
         loss = (loss_nll * weight_flatten).sum() / ( (weight_flatten).sum() + 1e-8 )
@@ -176,8 +177,9 @@ def train_model(args):
                 
                 loss = loss_func(output, seq, mask) #, weight=weight)
 
-                loss_penalty = args.lambda_penalty_loss * loss_func_penalty(output, seq, mask)
-                loss += loss_penalty
+                if args.lambda_penalty_loss > 0:
+                    loss_penalty = args.lambda_penalty_loss * loss_func_penalty(output, seq, mask)
+                    loss += loss_penalty
 
                 loss.backward()
                 optimizer.step()
@@ -194,15 +196,19 @@ def train_model(args):
                         output_val = model(context_val, input_seq_val)
                         loss_val = loss_func(output_val, seq_val, mask_val)
 
-                        loss_penalty_val = args.lambda_penalty_loss * loss_func_penalty(output_val, seq_val, mask_val)
-                        loss_val += loss_penalty_val
+                        if args.lambda_penalty_loss > 0:
+                            loss_penalty_val = args.lambda_penalty_loss * loss_func_penalty(output_val, seq_val, mask_val)
+                            loss_val += loss_penalty_val
                     
                         break # show one batch result only
                 model.train()
 
                 epoch_now = epoch + count / num_batches
                 
-                f.write("{:.8f} {:.4f} {:.4f} {:.4f} {:.4f}\n".format(epoch_now, loss.item(), loss_val.item(), loss_penalty.item(), loss_penalty_val.item()))
+                log = "{:.8f} {:.4f} {:.4f} ".format(epoch_now, loss.item(), loss_val.item())
+                if args.lambda_penalty_loss > 0:
+                    log += "{:.4f} {:.4f} ".format(epoch_now, loss_penalty.item(), loss_penalty_val.item())
+                f.write("{}\n".format(log))
 
             scheduler.step()
             

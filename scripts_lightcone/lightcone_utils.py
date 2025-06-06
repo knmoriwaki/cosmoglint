@@ -113,7 +113,7 @@ def create_mask(array, threshold):
 
 def generate_galaxy(args, logm, pos, redshift):
     """
-    args: args.gpu_id, args.model_dir, and args.threshold are used
+    args: args.gpu_id, args.model_dir, args.threshold, and args.param_dir are used
     logm: (num_halos, )
     pos: (num_halos, 3)
     redshift: (num_halos, )
@@ -135,11 +135,12 @@ def generate_galaxy(args, logm, pos, redshift):
                             33, 
                             25, 
                             21]
-    suffix_list = ["_ep20_w0.02", 
-                   "_ep20_w0.02", 
-                   "_ep20_w0.02", 
-                   "_ep20_w0.02", 
-                   "_ep20_w0.02", ]
+    suffix_list = ["_ep40_bs512_w0.02", 
+                   "_ep40_bs512_w0.02", 
+                   "_ep40_bs512_w0.02", 
+                   "_ep60_bs512_w0.02", 
+                   "_ep60_bs512_w0.02", ]
+    max_ids_file_list = ["{}/max_ids_20_{:d}.txt".format(args.param_dir, snapshot_number) for snapshot_number in snapshot_number_list]
     
     redshifts_of_snapshots = np.array([0.5, 1.0, 2.0, 3.0, 4.0])
     bin_edges = (redshifts_of_snapshots[:-1] + redshifts_of_snapshots[1:]) / 2.0
@@ -173,6 +174,9 @@ def generate_galaxy(args, logm, pos, redshift):
         ### generate galaxies
         print(f"# Generate galaxies (batch size: {opt.batch_size})")
 
+        max_ids = np.loadtxt(max_ids_file_list[i], dtype=int)
+        max_ids = torch.from_numpy(max_ids).long().to(device)
+
         logm_now = (logm - xmin[0]) / (xmax[0] - xmin[0])
         logm_now = torch.from_numpy(logm_now).float().to(device)    
         
@@ -189,9 +193,9 @@ def generate_galaxy(args, logm, pos, redshift):
             start = batch_idx * opt.batch_size 
             logm_batch = logm_now[start: start + opt.batch_size] # (batch_size, num_features)
             with torch.no_grad():
-                generated_batch, _ = model.generate(logm_batch, prob_threshold=prob_threshold, stop_criterion=stop_criterion) # (batch_size, seq_length, num_features)
-            generated.append(generated_batch)
-        generated = torch.cat(generated, dim=0) # (num_halos, seq_length, num_features)
+                generated_batch, _ = model.generate(logm_batch, prob_threshold=prob_threshold, stop_criterion=stop_criterion, max_ids=max_ids) # (batch_size, seq_length, num_features)
+            generated.append(generated_batch.cpu().detach().numpy())
+        generated = np.concatenate(generated, axis=0) # (num_halos, seq_length, num_features)
 
         ### Select valid galaxies
         print("# Select valid galaxies")
@@ -199,7 +203,6 @@ def generate_galaxy(args, logm, pos, redshift):
         # Set mask for selection
         batch, seq_length, num_features = generated.shape
 
-        generated = generated.cpu().detach().numpy()
         generated = generated * (xmax[1:1+num_features] - xmin[1:1+num_features]) + xmin[1:1+num_features]
 
         sfr = generated[:,:,0]

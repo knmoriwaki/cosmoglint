@@ -74,6 +74,7 @@ def generate_galaxy_TransNF(args, logm, pos, vel):
 
     from lim_mock_generator.model.transformer_nf import my_model, my_flow_model, generate
     device = torch.device("cuda:{}".format(args.gpu_id) if torch.cuda.is_available() else "cpu")
+    print("Using device: ", device)
 
     ### load Transformer
     with open("{}/args.json".format(args.model_dir), "r") as f:
@@ -292,7 +293,7 @@ def generate_galaxy_two_step(args, logm, pos, vel):
 
 def generate_galaxy(args, logm, pos, vel):
     """
-    args: args.gpu_id, args.model_dir, args.threshold, and args.prob_threshold are used
+    args: args.gpu_id, args.model_dir, args.threshold, args.prob_threshold, and argsmax_ids_file are used
     logm: (num_halos, ), log mass of the halos
     pos: (num_halos, 3), positions of the halo centers
     vel: (num_halos, 3), velocities of the halo centers
@@ -323,6 +324,12 @@ def generate_galaxy(args, logm, pos, vel):
     print("# Generate galaxies (batch size: {:d})".format(opt.batch_size))
     logm = (logm - xmin[0]) / (xmax[0] - xmin[0])
     logm = torch.from_numpy(logm).float().to(device)
+
+    if args.max_ids_file is None:
+        max_ids = None
+    else:
+        max_ids = np.loadtxt(args.max_ids_file, dtype=int) 
+        max_ids = torch.tensor(max_ids).to(device) # (num_features, )
     
     num_batch = (len(logm) + opt.batch_size - 1) // opt.batch_size
     stop_criterion = ( np.log10(args.threshold) - xmin[1] ) / (xmax[1] - xmin[1]) # stop criterion for SFR
@@ -331,9 +338,9 @@ def generate_galaxy(args, logm, pos, vel):
         start = batch_idx * opt.batch_size 
         logm_batch = logm[start: start + opt.batch_size] # (batch_size, num_features)
         with torch.no_grad():
-            generated_batch, _ = model.generate(logm_batch, prob_threshold=args.prob_threshold, stop_criterion=stop_criterion) # (batch_size, seq_length, num_features)
-        generated.append(generated_batch)
-    generated = torch.cat(generated, dim=0) # (num_halos, seq_length, num_features)
+            generated_batch, _ = model.generate(logm_batch, prob_threshold=args.prob_threshold, stop_criterion=stop_criterion, max_ids=max_ids) # (batch_size, seq_length, num_features)
+        generated.append(generated_batch.cpu().detach().numpy())
+    generated = np.concatenate(generated, axis=0) # (num_halos, seq_length, num_features)
 
     ### Select valid galaxies
     print("# Select valid galaxies")
@@ -341,7 +348,6 @@ def generate_galaxy(args, logm, pos, vel):
     # Set mask for selection
     batch, seq_length, num_features = generated.shape
 
-    generated = generated.cpu().detach().numpy()
     generated = generated * (xmax[1:1+num_features] - xmin[1:1+num_features]) + xmin[1:1+num_features]
 
     sfr = generated[:,:,0]

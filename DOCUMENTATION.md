@@ -168,6 +168,7 @@ Other options:
 - `--logm_min`: Minimum log halo mass [Msun] to be included in the mock (default: 11.0).
 - `--threshold`: Only galaxies with SFR > threshold [Msun/yr] will be used in the mock (default: 1e-3).
 - `--mass_correction_factor`: Multiplier applied to halo mass before galaxy generation (default: 1.0). Useful if calibration is needed.
+- `--max_ids_file`: File containing maximum IDs for SFR
 
 ---
 
@@ -184,7 +185,7 @@ python create_lightcone.py --input_fname [input_fname] --model_dir [model_dir]
 Important options:
 - `--input_fname`: Path to the lightcone data. Pinocchio format is supported.
 - `--output_fname`: Output filename (HDF5 format).
-- `--model_dir`: Path to a directory containing the directories of trained model. The name of the directories to be used for each redshift bin is hardcoded in `lightcone_utils.py`.
+- `--model_dir`: Path to a directory containing the directories of trained models. The names of the directories to be used for each redshift bin is hardcoded in `lightcone_utils.py`.
 - `--redshift_space`: If set, generate output in redshift space.
 - `--side_length`, `--angular_resolution`: Angular size and resolution (arcsec) of the simulated map.
 - `--fmin`,`--fmax`: Frequency range [GHz] for the mock cube.
@@ -200,6 +201,7 @@ Other options:
 - `--threshold`: Minimum SFR threshold for emission line generation.
 - `--gen_catalog`: If set, generate a galaxy catalog with SFR greater than --catalog_threshold.
 - `--catalog_threshold`: SFR threshold for inclusion in the catalog.
+- `--max_ids_file`: File containing maximum IDs for SFR
 
 ---
 

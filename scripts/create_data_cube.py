@@ -19,7 +19,7 @@ from astropy.cosmology import FlatLambdaCDM
 cosmo = FlatLambdaCDM(H0=67.74, Om0=0.3089)
 import astropy.units as u
 
-from lim_mock_generator.utils.generation_utils import generate_galaxy, generate_galaxy_two_step, generate_galaxy_TransNF, save_intensity_data, save_catalog_data
+from lim_mock_generator.utils.generation_utils import save_intensity_data, save_catalog_data
 
 cspeed = 3e10 # [cm/s]
 micron = 1e-4 # [cm]
@@ -44,16 +44,19 @@ def parse_args():
     parser.add_argument("--redshift_space", action="store_true", default=False, help="Use redshift space")
     parser.add_argument("--gen_both", action="store_true", default=False, help="Generate both real and redshift space data")
 
-    parser.add_argument("--gen_catalog", action="store_true", default=False, help="Generate a catalog of galaxies instead of a data cube")
-    parser.add_argument("--catalog_threshold", type=float, default=10, help="Threshold for SFR in the catalog in [Msun/yr]")
-
     parser.add_argument("--logm_min", type=float, default=11.0, help="Minimum log mass [Msun] to be used")
     parser.add_argument("--threshold", type=float, default=1e-3, help="Galaxies with SFR > threshold [Msun/yr] will be used")
 
-    ### Generative model parameters (not used when using the original values in simulation data)
+    parser.add_argument("--gen_catalog", action="store_true", default=False, help="Generate a catalog of galaxies instead of a data cube")
+    parser.add_argument("--catalog_threshold", type=float, default=10, help="Threshold for SFR in the catalog in [Msun/yr]")
+
+    parser.add_argument("--mass_correction_factor", type=float, default=1.0, help="Mass correction factor; the halo mass is multiplied by this factor before generating galaxies.")
+
+    ### Generative model parameters
     parser.add_argument("--model_dir", type=str, default=None, help="The directory of the model. If not given, use 7th column as intensity.")
     parser.add_argument("--NN_model_dir", type=str, default=None, help="The directory of the NN model. If both model_dir and NN_model_dir are given, the galaxies are generated with two-step method.") 
-    parser.add_argument("--mass_correction_factor", type=float, default=1.0, help="Mass correction factor; the halo mass is multiplied by this factor before generating galaxies.")
+    parser.add_argument("--prob_threshold", type=float, default=1e-5, help="Below this probability, the galaxy is not generated.")
+    parser.add_argument("--max_ids_file", type=str, default=None, help="File containing maximum IDs for SFR.")
 
     return parser.parse_args()
 
@@ -101,8 +104,9 @@ def create_data(args):
     logm += np.log10(args.mass_correction_factor) 
 
     ### Mask out small halos
-    print(f"# Minimum log mass in catalog [Msun]: {np.min(logm):.5f}")
-    print(f"# Use halos with log mass [Msun] > {args.logm_min}")
+    print("# Minimum log mass in catalog [Msun]: {:.5f}".format(np.min(logm)))
+    print("# Maximum log mass in catalog [Msun]: {:.5f}".format(np.max(logm)))
+    print("# Use halos with log mass [Msun] > {}".format(args.logm_min))
     mask = logm > args.logm_min
     logm = logm[mask]
     pos = pos[mask]
@@ -115,6 +119,7 @@ def create_data(args):
 
     if args.model_dir == None:
         print("# Use original values in simulation data (7th column)")
+        print("# Use galaxies with value > {}".format(args.threshold))
         value = 10 ** data[:,7]
         value = value[mask]
 
@@ -159,11 +164,14 @@ def create_data(args):
 
     else:
         if "Transformer_NF" in args.model_dir:
+            from lim_mock_generator.utils.generation_utils import generate_galaxy_TransNF
             generated, pos_central, vel_central, flag_central = generate_galaxy_TransNF(args, logm, pos, vel)
         else:
             if args.NN_model_dir is not None:
+                from lim_mock_generator.utils.generation_utils import generate_galaxy_two_step
                 generated, pos_central, vel_central, flag_central = generate_galaxy_two_step(args, logm, pos, vel)
             else:
+                from lim_mock_generator.utils.generation_utils import generate_galaxy
                 generated, pos_central, vel_central, flag_central = generate_galaxy(args, logm, pos, vel)
 
         sfr = generated[:,0]

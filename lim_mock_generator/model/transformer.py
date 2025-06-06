@@ -6,7 +6,9 @@ import random
 import torch
 import torch.nn as nn
 
-from torch.distributions import Beta, Categorical
+from torch.distributions import Categorical
+from sparsemax import Sparsemax
+from entmax import entmax15
 
 def my_model(args):
     
@@ -58,10 +60,16 @@ class TransformerBase(nn.Module):
         return torch.where(mask, zero_tensor, x)
 
     
-    def generate(self, context, seq=None, teacher_forcing_ratio=0.0, temperature=1.0, stop_criterion=None, prob_threshold=0, cutoff=True):
+    def generate(self, context, seq=None, teacher_forcing_ratio=0.0, temperature=1.0, stop_criterion=None, prob_threshold=0, cutoff=True, max_ids=None, buffer_percent=0.05):
         # context: (batch, num_condition)
         batch_size = len(context)
 
+        buffer = max(int(buffer_percent * self.num_features_out), 1)
+        # used for cutoff and max_ids
+        # buffer = 1 indicates the bins just above the max_ids are avoided.
+
+        if len(context.shape) == 1:
+            context = context.unsqueeze(-1)
         generated = torch.zeros(batch_size, self.max_length, self.num_features_in).to(context.device) # (batch, max_length, num_features_in)
         mask_all_batch = torch.ones(batch_size, dtype=torch.bool).to(context.device)
                     
@@ -87,15 +95,23 @@ class TransformerBase(nn.Module):
                 if t > 1 and cutoff: 
                     # Set the probability for SFR bins above the previous SFR bin to zero
                     # This is applied only from the second satellite galaxy
-                    previous_token_bin = (generated[:, t-1, 0] * self.num_features_out).long() + 10
-                    # use [+1] to avoid the bins just above the previous SFR
-                    # use [+n] to have larger buffer
-                    previous_token_bin = previous_token_bin.view(-1, 1) # (batch, 1)
+                    previous_token_bin = (generated[:, t-1, 0] * self.num_features_out).long() + buffer
+                    previous_token_bin = previous_token_bin.contiguous().view(-1, 1) # (batch, 1)
                     bin_indices = torch.arange(self.num_features_out, device=context.device).view(1, -1) # (1, num_features_out)
-                    mask = bin_indices > previous_token_bin # (batch, num_features_out)
+                    mask = (bin_indices > previous_token_bin) # (batch, num_features_out)
                     mask = mask & (x_last[:, 0, :] >= prob_threshold) # (batch, num_features_out)
                     x_last[:, 0, :] = self._set_to_zero(x_last[:, 0, :], mask) # set the probability to zero for bins above the previous bin
-            
+
+                if max_ids is not None:
+                    nbins = len(max_ids)
+                    max_ids = max_ids.to(context.device) + buffer # (nbins, ) 
+                    context_bins = torch.linspace(0, 1, nbins, device=context.device) # (nbins, )
+                    context_bin_indices = torch.bucketize(context[:, 0], context_bins) - 1 # (batch, )
+                    bin_indices = torch.arange(self.num_features_out, device=context.device) # (num_features_out, )
+                    mask = (bin_indices.unsqueeze(0) > max_ids[context_bin_indices].unsqueeze(1)) # (batch, num_features_out)
+                    x_last[:, 0, :] = self._set_to_zero(x_last[:, 0, :], mask)
+
+
                 x_last = self._set_to_zero(x_last, x_last < prob_threshold) # set the probability to zero if less than prob_threshold
 
                 x_last = x_last.reshape(-1, self.num_features_out) # (batch * num_features_in, num_features_out)
@@ -151,6 +167,7 @@ class Transformer1(TransformerBase): # add logM at first in the sequence
 
         self.out_activation = nn.Softmax(dim=-1)
         #self.out_activation = Sparsemax(dim=-1)
+        
 
     def forward(self, context, x):
         # context: (batch, num_condition)
@@ -184,6 +201,7 @@ class Transformer1(TransformerBase): # add logM at first in the sequence
         x = x.view(batch_size, total_seq_length, self.num_features_in, -1) # (batch, seq_length + 1, num_features_in, num_features_out)
 
         x = self.out_activation(x)
+        # x = entmax(x, dim=-1)
 
         return x
 
