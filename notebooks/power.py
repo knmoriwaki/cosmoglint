@@ -137,11 +137,9 @@ import warnings
 
 def cylindrical_average(field, coords, nbins, log_bins=False, use_same_bins=False):
 
-    # 入力チェック：fieldが3次元、coordsが3個の1次元配列であること
     if field.ndim != 3 or len(coords) != 3:
         raise ValueError("field must be 3D and coords must be a list of 3 1D arrays.")
 
-    # 各軸の座標グリッドを生成 (indexing='ij' を指定して元のshapeに合わせる)
     X, Y, Z = np.meshgrid(coords[0], coords[1], coords[2], indexing='ij')
 
     r_coords = np.sqrt(X**2 + Y**2)
@@ -169,20 +167,15 @@ def cylindrical_average(field, coords, nbins, log_bins=False, use_same_bins=Fals
     else:
         bins_r = np.logspace(np.log10(r_min), np.log10(r_max), nbins + 1)
 
-    # digitize は1始まりのインデックスを返す（ビン範囲外の値は 0 または nbins+1）
     indx_r = np.digitize(r_coords.flatten(), bins_r)
     indx_z = np.digitize(z_coords.flatten(), bins_z)
 
-    # 有効なビン内の値のみを抽出 (indx 1～nbinsに属するもの)
     valid = (indx_r >= 1) & (indx_r <= nbins) & (indx_z >= 1) & (indx_z <= nbins)
-    # 0-based に変換: 各軸ともに -1 する
     indx_r = indx_r[valid] - 1  
     indx_z = indx_z[valid] - 1
 
-    # 2次元のビン番号を一意にするために、合成インデックスを作成
     combined_idx = indx_r + nbins * indx_z
 
-    # --- 各ビンに含まれる画素数の算出 ---
     sumweights = np.bincount(combined_idx, minlength=nbins * nbins)
     sumweights = sumweights.reshape((nbins, nbins))
     if np.any(sumweights == 0):
@@ -195,9 +188,6 @@ def cylindrical_average(field, coords, nbins, log_bins=False, use_same_bins=Fals
     sum_field = sum_field.reshape((nbins, nbins))
     mean = sum_field / sumweights
 
-    # --- 分散の計算 ---
-    # 各有効画素について、そのビンの平均値との差の二乗を計算
-    # まず，flatten した2次元平均値（合成したときの順番で）から，各画素に対応する平均を lookup する
     average_arr = mean.flatten()  # shape (nbins*nbins,)
     averaged_field = average_arr[combined_idx] 
     var_field = (field_flat[valid] - averaged_field) ** 2

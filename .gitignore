@@ -1,9 +1,8 @@
 **/__pycache__/
 **/test*.ipynb
-**/sub*.sh
 **/runs/
-**/output*/
-**/generated_data*/
 *.egg-info/
 scripts/param_files/
+scripts/calc_statistics/
 dataset/
+
