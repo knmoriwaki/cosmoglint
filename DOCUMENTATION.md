@@ -9,7 +9,7 @@ This repository includes:
 - Scripts for training and mock catalog generation.
 - Example notebooks for result visualization.
 
-Pre-trained model and example datasets available at: [Google Drive](https://drive.google.com/drive/folders/1HRkRdfti8XaIPyF3er5QJmFX3WXCmAQI?usp=sharing).
+Pre-trained models and example datasets available at: [Google Drive](https://drive.google.com/drive/folders/1IFje9tNRf4Dr3NufqzlDdGMFTEDpsm35?usp=share_link).
 
 
 ---

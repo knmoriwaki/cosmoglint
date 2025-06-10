@@ -2,7 +2,7 @@
 
 Model to generate galaxy properties for a given halo mass.
 
-A model trained with TNG300-1 at z = 2 as well as example inputs for training and mock creation are available at [Google Drive](https://drive.google.com/drive/folders/1HRkRdfti8XaIPyF3er5QJmFX3WXCmAQI?usp=sharing).
+A model trained with TNG300-1 at z = 0.5 - 6 as well as example input data for training and mock creation are available at [Google Drive](https://drive.google.com/drive/folders/1IFje9tNRf4Dr3NufqzlDdGMFTEDpsm35?usp=share_link).
 
 Currently, the package is designed to work with comoving volume box data only. Support for lightcone data may be added in a future update.
 
