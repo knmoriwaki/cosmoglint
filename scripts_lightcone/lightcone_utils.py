@@ -28,66 +28,93 @@ GHz = 1e9
 Jy = 1.0e-23        # jansky (erg/s/cm2/Hz)
 arcsec = 4.848136811094e-6 # [rad] ... arcmin / 60 //
 
-
-def arcsec_to_cMpc(l_arcsec, z, cosmo=cosmo_default):
-    l_rad = l_arcsec * u.arcsec / u.radian
-    l_cMpc = ( cosmo.comoving_transverse_distance(z) * l_rad ).to(u.Mpc)
-    return l_cMpc.value 
-
-def freq_to_comdis(nu_obs, nu_rest, cosmo=cosmo_default):
-    z = nu_rest / nu_obs - 1
-    if z < 0:
-        print("Error: z < 0")
-        sys.exit(1)
-    return cosmo.comoving_distance(z).to(u.Mpc).value
-
-def cMpc_to_arcsec(l_cMpc, z, cosmo, l_with_hlittle=True): 
-    hlittle = cosmo.H0.value / 100
+def cMpc_to_arcsec(l_cMpc, z, cosmo=cosmo_default, l_with_hlittle=False): 
     if l_with_hlittle:
+        hlittle = cosmo.H0.value / 100
         l_cMpc = l_cMpc / hlittle # [Mpc/h] -> [Mpc]
     l_rad = l_cMpc * u.Mpc / cosmo.comoving_transverse_distance(z)
     l_arcsec = (l_rad * u.radian).to(u.arcsec)
     return l_arcsec.value
 
-def dcMpc_to_dz(l_cMpc, z, cosmo, l_with_hlittle=True):
-    hlittle = cosmo.H0.value / 100
+def arcsec_to_cMpc(l_arcsec, z, cosmo=cosmo_default, l_with_hlittle=False):
+    l_rad = l_arcsec * u.arcsec / u.radian
+    l_cMpc = ( cosmo.comoving_transverse_distance(z) * l_rad ).to(u.Mpc)
     if l_with_hlittle:
+        hlittle = cosmo.H0.value / 100
+        l_cMpc = l_cMpc * hlittle # [Mpc] -> [Mpc/h]
+    return l_cMpc.value 
+
+def dcMpc_to_dz(l_cMpc, z, cosmo=cosmo_default, l_with_hlittle=False):
+    if l_with_hlittle:
+        hlittle = cosmo.H0.value / 100
         l_cMpc = l_cMpc / hlittle # [Mpc/h] -> [Mpc]
     dx_dz = (cspeed  / cosmo.H(z)).to(u.Mpc)
     d_z = l_cMpc / dx_dz.value 
     return d_z
 
-def z_to_log_lumi_dis(z, cosmo):
+def dz_to_dcMpc(dz, z, cosmo=cosmo_default, l_with_hlittle=False):
+    dx_dz = (cspeed / cosmo.H(z)).to(u.Mpc)
+    l_cMpc = dz * dx_dz.value 
+    if l_with_hlittle:
+        hlittle = cosmo.H0.value / 100
+        l_cMpc = l_cMpc * hlittle # [Mpc] -> [Mpc/h]
+    return l_cMpc # [Mpc/h] if l_with_hlittle else [Mpc]
+
+
+def freq_to_comdis(nu_obs, nu_rest, cosmo=cosmo_default, l_with_hlittle=False):
+    z = nu_rest / nu_obs - 1
+    if z < 0:
+        print("Error: z < 0")
+        sys.exit(1)
+    l_cMpc = cosmo.comoving_distance(z).to(u.Mpc).value
+    if l_with_hlittle:
+        hlittle = cosmo.H0.value / 100
+        l_cMpc = l_cMpc * hlittle # [Mpc] -> [Mpc/h]
+
+    return l_cMpc # [Mpc/h] if l_with_hlittle else [Mpc]
+
+
+def z_to_log_lumi_dis(z, cosmo=cosmo_default):
     return np.log10( cosmo.luminosity_distance(z).to(u.cm).value )
 
-def save_catalog_data(pos_list, value, args, output_fname):
-    if not isinstance(pos_list, list):
-        pos_list = [pos_list]
+def load_lightcone_data(input_fname, cosmo=cosmo_default):
+    print(f"# Load {input_fname}")
 
-    with open(output_fname, 'w') as f:
-        for i, v in enumerate(value):
-            f.write(f"{pos_list[0][i, 0]} {pos_list[0][i, 1]} ")
-            for pos in pos_list:
-                f.write(f"{pos[i, 2]} ")
+    if "pinocchio" in input_fname: 
+        if "old_version" in input_fname:
+            from lightcone_utils import load_old_plc
+            M, theta, phi, _, redshift_obs, redshift_real = load_old_plc(input_fname)
+            logm = np.log10(M)
+        else:
+            import lim_mock_generator.utils.ReadPinocchio5 as rp
+            myplc = rp.plc(input_fname)
+            
+            logm = np.log10( myplc.data["Mass"] )
+            theta = myplc.data["theta"] # [arcsec]
+            phi = myplc.data["phi"]
 
-            f.write(f"{v}\n")
+            redshift_obs = myplc.data["obsz"]
+            redshift_real = myplc.data["truez"]
 
-    print(f"# Catalog saved to {output_fname}")
+        hlittle = cosmo.H(0).to(u.km/u.s/u.Mpc).value / 100.0 
+        logm -= np.log10(hlittle) # [Msun]
 
-def save_intensity_data(intensity, args, output_fname):
-    args_dict = vars(args)
-    args_dict = {k: (v if v is not None else "None") for k, v in args_dict.items()}
+        theta = ( 90. - theta ) * 3600 # [arcsec]
+        pos_x = theta * np.cos( phi * np.pi / 180. ) # [arcsec] 
+        pos_y = theta * np.sin( phi * np.pi / 180. ) # [arcsec]
 
-    if not isinstance(intensity, list):
-        intensity = [intensity]
+        theta_max = np.max(theta)
+        pos_x += theta_max / 1.5
+        pos_y += theta_max / 1.5
+        
+        print("# Minimum log mass in catalog: {:.5f}".format(np.min(logm)))
+        print("# Redshift: {:.3f} - {:.3f}".format(np.min(redshift_real), np.max(redshift_real)))
+        print("# Number of halos: {}".format(len(logm)))
+
+    else:
+        raise ValueError("Unknown input file format")
     
-    with h5py.File(output_fname, 'w') as f:
-        for i, d in enumerate(intensity):
-            f.create_dataset(f'intensity{i}', data=d)    
-        for key, value in args_dict.items():
-            f.attrs[key] = value
-    print(f"# Data cube saved as {output_fname}")
-
+    return logm, pos_x, pos_y, redshift_obs, redshift_real
 
 def create_mask(array, threshold): 
     """
@@ -129,36 +156,51 @@ def generate_galaxy(args, logm, pos, redshift):
     redshift_central_all = [] 
     flag_central_all = []
 
-    ### Divide haloes into redshift bins
-    snapshot_number_list = [67, 
-                            49, 
-                            33, 
-                            25, 
-                            21]
-    suffix_list = ["_ep40_bs512_w0.02", 
-                   "_ep40_bs512_w0.02", 
-                   "_ep40_bs512_w0.02", 
-                   "_ep60_bs512_w0.02", 
-                   "_ep60_bs512_w0.02", ]
-    max_ids_file_list = ["{}/max_ids_20_{:d}.txt".format(args.param_dir, snapshot_number) for snapshot_number in snapshot_number_list]
-    
-    redshifts_of_snapshots = np.array([0.5, 1.0, 2.0, 3.0, 4.0])
+    ####################################
+    # Snapshot numbers and suffixes for the models
+    ####################################
+    snapshot_dict = {
+        67: ["_ep40_bs512_w0.02", 0.5],
+        55: ["_ep40_bs512_w0.02", 0.8], 
+        49: ["_ep40_bs512_w0.02", 1.0],
+        43: ["_ep40_bs512_w0.02", 1.3],
+        40: ["_ep60_bs512_w0.02", 1.5],
+        35: ["_ep60_bs512_w0.02", 1.8],
+        33: ["_ep40_bs512_w0.02", 2.0],
+        29: ["_ep60_bs512_w0.02", 2.4],
+        25: ["_ep60_bs512_w0.02", 3.0],
+        23: ["_ep60_bs512_w0.02", 3.5],
+        21: ["_ep60_bs512_w0.02", 4.0],
+        19: ["_ep60_bs512_w0.02", 4.4],
+        17: ["_ep80_bs512_w0.02", 5.0],
+        15: ["_ep80_bs512_w0.02", 5.5],
+        13: ["_ep80_bs512_w0.02", 6.0],
+        #11: ["_ep80_bs512_w0.02", 7.0],
+    }
+    ###################################
+    redshifts_of_snapshots = np.array([ v[1] for v in snapshot_dict.values() ])    
     bin_edges = (redshifts_of_snapshots[:-1] + redshifts_of_snapshots[1:]) / 2.0
-    bin_indices = np.maximum(np.digitize(redshift, bin_edges) - 1, 0)  # Ensure at least 0
+    bin_indices = np.digitize(redshift, bin_edges)  
 
-    for i, snapshot_number in enumerate(snapshot_number_list):
-        ### Skip if no haloes in this redshift bin
+    max_ids_file_list = ["{}/max_ids_20_{:d}.txt".format(args.param_dir, snapshot_number) for snapshot_number in snapshot_dict]
+
+    for i, snapshot_number in enumerate(snapshot_dict):
+        suffix, redshift_of_snapshot = snapshot_dict[snapshot_number]
         mask_z = (bin_indices == i)
+        
+        print("# Snapshot number: {:d}, Redshift: {:.2f}".format(snapshot_number, redshift_of_snapshot))
+        
+        ### Skip if no haloes in this redshift bin
         if not np.any(mask_z):
-            print(f"# No haloes in redshift bin {i} (snapshot number {snapshot_number}), skipping...")
+            print("# No haloes in redshift bin {:d} (snapshot number {:d}), skipping...".format(i, snapshot_number))
             continue
     
         ### load Transformer
-        model_dir = f"{args.model_dir}/transformer1_{snapshot_number}_use_vel{suffix_list[i]}"
+        model_dir = "{}/transformer1_{}_use_vel{}".format(args.model_dir, snapshot_number, suffix)
 
         with open(f"{model_dir}/args.json", "r") as f:
             opt = json.load(f, object_hook=lambda d: argparse.Namespace(**d))
-        print("opt: ", opt)
+        #print("opt: ", opt)
 
         norm_params = np.array(opt.norm_params)
         xmin = norm_params[:,0]
@@ -169,10 +211,10 @@ def generate_galaxy(args, logm, pos, redshift):
 
         model.load_state_dict(torch.load("{}/model.pth".format(model_dir)))
         model.eval()
-        print(model)
+        #print(model)
 
         ### generate galaxies
-        print(f"# Generate galaxies (batch size: {opt.batch_size})")
+        print("# Generate galaxies (batch size: {:d})".format(opt.batch_size))
 
         max_ids = np.loadtxt(max_ids_file_list[i], dtype=int)
         max_ids = torch.from_numpy(max_ids).long().to(device)
@@ -470,19 +512,15 @@ def calc_noise_power(sigma_noise_Jy_sr, freq, intensity, side_length=3600, line_
     redshift_mean = np.mean(redshifts)
     nu_rest = line_dict[line_name][0] / GHz
 
-    Lx = arcsec_to_cMpc(side_length, redshift_mean) # [cMpc/h]
-    Ly = arcsec_to_cMpc(side_length, redshift_mean) # [cMpc/h]
-    Lz = freq_to_comdis(freq[0], nu_rest) - freq_to_comdis(freq[-1], nu_rest) 
+    Lx = arcsec_to_cMpc(side_length, redshift_mean, cosmo=cosmo, l_with_hlittle=with_hlittle) # [cMpc/h]
+    Ly = arcsec_to_cMpc(side_length, redshift_mean, cosmo=cosmo, l_with_hlittle=with_hlittle) # [cMpc/h]
+    Lz = freq_to_comdis(freq[0], nu_rest, cosmo=cosmo, l_with_hlittle=with_hlittle) - freq_to_comdis(freq[-1], nu_rest, cosmo=cosmo, l_with_hlittle=with_hlittle) 
 
     dx = Lx / intensity.shape[0]
     dy = Ly / intensity.shape[1]
     dz = Lz / intensity.shape[2]
     
     dL = np.array([dx, dy, dz])
-
-    hlittle = cosmo.H0.value / 100
-    if with_hlittle:
-        dL *= hlittle
     dV = np.prod(dL) 
 
     P_noise = sigma_noise_Jy_sr**2 * dV
@@ -513,17 +551,14 @@ def calc_power(freq_obs, intensity, intensity2=None, side_length=3600, line_name
     print("Use {} rest-frame frequency".format(line_name))
     print("redshift: {:.2f} - {:.2f} (mean: {:.2f})".format(redshifts[-1],redshifts[0],redshift_mean))
     
-    Lx = arcsec_to_cMpc(side_length, redshift_mean) # [cMpc]
-    Ly = arcsec_to_cMpc(side_length, redshift_mean) # [cMpc]
+    Lx = arcsec_to_cMpc(side_length, redshift_mean, cosmo=cosmo, l_with_hlittle=with_hlittle) # [cMpc]
+    Ly = arcsec_to_cMpc(side_length, redshift_mean, cosmo=cosmo, l_with_hlittle=with_hlittle) # [cMpc]
     Lz = freq_to_comdis(freq_obs[0], nu_rest) - freq_to_comdis(freq_obs[-1], nu_rest) # [cMpc]
 
     ## Fourier transform
     L = np.array([Lx, Ly, Lz])
     dL = np.array([Lx / intensity.shape[0], Ly / intensity.shape[1], Lz / intensity.shape[2]])
-    hlittle = cosmo.H0.value / 100
-    if with_hlittle:
-        L *= hlittle # [cMpc/h]
-        dL *= hlittle # [cMpc/h]
+
     V = np.prod(L) 
     dV = np.prod(dL) # [cMpc/h]^3
     

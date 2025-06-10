@@ -25,7 +25,8 @@ GHz = 1e9
 Jy = 1.0e-23        # jansky (erg/s/cm2/Hz)
 arcsec = 4.848136811094e-6 # [rad] ... arcmin / 60 //
 
-from lightcone_utils import cMpc_to_arcsec, dcMpc_to_dz, load_lightcone_data
+from line_model import calc_line_luminosity, line_dict
+from lightcone_utils import cMpc_to_arcsec, dcMpc_to_dz, z_to_log_lumi_dis, load_lightcone_data
 
 def parse_args():
 
@@ -47,8 +48,6 @@ def parse_args():
 
     parser.add_argument("--redshift_min", type=float, default=0.0, help="Minimum redshift")
     parser.add_argument("--redshift_max", type=float, default=6.0, help="Maximum redshift")
-    parser.add_argument("--dz", type=float, default=0.01, help="Redshift bin size")
-    parser.add_argument("--use_logz", action="store_true", default=False, help="Use dlogz instead of dz for redshift binning")
 
     parser.add_argument("--logm_min", type=float, default=11.0, help="Minimum log mass")
     parser.add_argument("--threshold", type=float, default=1e-3, help="Threshold for SFR")
@@ -61,7 +60,10 @@ def parse_args():
     ### Generate mock data with frequency bins if --gen_mock is set otherwise galaxy catalog with SFR > catalog_threshold is created
     parser.add_argument("--side_length", type=float, default=300.0, help="side length in arcsec")
     parser.add_argument("--angular_resolution", type=float, default=30, help="angular resolution in arcsec")
-    
+    parser.add_argument("--fmin", type=float, default=10.0, help="minimum frequency in GHz")
+    parser.add_argument("--fmax", type=float, default=100.0, help="maximum frequency in GHz")
+    parser.add_argument("--R", type=float, default=100, help="spectral resolution R")
+
     ### Generative model parameters
     parser.add_argument("--model_dir", type=str, default=None, help="The directory of the model. If not given, use 4th column as intensity.")
     parser.add_argument("--NN_model_dir", type=str, default=None, help="The directory of the NN model.") 
@@ -76,8 +78,8 @@ def create_mock(args):
     torch.backends.cudnn.benchmark = False
     np.random.seed(args.seed)
 
-    print("# redshift: {:.4f} - {:.4f} [GHz]".format(args.redshift_min, args.redshift_max))
-    print("# dz: {:.4f}".format(args.dz))
+    print("# frequency: {:.4f} - {:.4f} [GHz]".format(args.fmin, args.fmax))
+    print("# spectral resolution R: {:.4f}".format(args.R))
     print("# area : {:.4f} arcsec x {:.4f} arcsec".format(args.side_length, args.side_length))
     print("# angular resolution : {:.4f} arcsec".format(args.angular_resolution))
 
@@ -86,7 +88,7 @@ def create_mock(args):
 
     ### Load data
     logm, pos_x, pos_y, redshift_obs, redshift_real = load_lightcone_data(args.input_fname, cosmo=cosmo)
-    
+
     logm += np.log10(args.mass_correction_factor)
 
     if not args.redshift_space:
@@ -120,10 +122,10 @@ def create_mock(args):
                 from lightcone_utils import generate_galaxy
                 generated, pos_central, redshift_real_central, flag_central = generate_galaxy(args, logm, pos, redshift_real)
 
-        sfr = generated[:,0]
+        log_sfr = np.log10( generated[:,0] )
         distance = generated[:,1]
 
-        num_gal = len(sfr)
+        num_gal = len(log_sfr)
 
         redshift_real = redshift_real_central
 
@@ -134,16 +136,17 @@ def create_mock(args):
         _sin_theta = np.sqrt(1 - _cos_theta ** 2)
         
         # Convert Mpc to deg
-        distance_arcsec = cMpc_to_arcsec(distance, redshift_real, cosmo=cosmo, l_with_hlittle=True)
-        distance_z = dcMpc_to_dz(distance, redshift_real, cosmo=cosmo, l_with_hlittle=True)
+        distance_arcsec = cMpc_to_arcsec(distance, redshift_real, cosmo, l_with_hlittle=True)
+        distance_z = dcMpc_to_dz(distance, redshift_real, cosmo, l_with_hlittle=True)
 
         pos_galaxies = pos_central
         pos_galaxies[:,0] += distance_arcsec * _sin_theta * np.cos(_phi)
         pos_galaxies[:,1] += distance_arcsec * _sin_theta * np.sin(_phi)
         pos_galaxies[:,2] += distance_z * _cos_theta
+
+        log_lumi_dis = z_to_log_lumi_dis(redshift_real, cosmo) # [cm]
         
         if args.redshift_space:
-
             relative_vel_rad = generated[:,2]
             relative_vel_tan = generated[:,3]
             relative_vel_rad[flag_central] = 0 # Set vr to 0 for central galaxies
@@ -156,60 +159,74 @@ def create_mock(args):
             pos_galaxies[:,2] += vz_gal / scale_factor / H * hlittle
 
         if args.gen_catalog:
-            
+            NotImplementedError("Generating galaxy catalog is not implemented yet.")
+        else:
+            ### Initialize the data cube and flist
+            flist = []
+            dflist = []
+
+            fnow = args.fmin * GHz
+            while fnow <= args.fmax * GHz:
+                flist.append(fnow)
+                dflist.append(fnow / args.R)
+                fnow += fnow / args.R
+            flist = np.array(flist, dtype=np.float32)
+            dflist = np.array(dflist, dtype=np.float32)
+
+            Nx = int(args.side_length / args.angular_resolution)
+            Nz = len(flist) - 1
+
+            npix = np.array([Nx, Nx, Nz])
+            total_intensity = np.zeros((Nx, Nx, Nz), dtype=np.float32)
+
+            ix = np.floor(pos_galaxies[:,0] / args.angular_resolution).astype(np.int32)
+            iy = np.floor(pos_galaxies[:,1] / args.angular_resolution).astype(np.int32)
+
             with h5py.File(args.output_fname, "w") as f:
-                
+
+                ### Save metadata
                 args_dict = vars(args)
                 args_dict = {k: (v if v is not None else "None") for k, v in args_dict.items()}
                 for key, value in args_dict.items():
                     f.attrs[key] = value
 
-                f.create_dataset("Redshifts", data=redshift_real, compression="gzip")
-                f.create_dataset("Positions", data=pos_galaxies, compression="gzip")
-                f.create_dataset("SFR", data=sfr, compression="gzip")
-            
-            print("Galaxy catalog saved to {}".format(args.output_fname))
+                f.create_dataset("frequency", data=flist, compression="gzip")
 
-        else:
-            ### Initialize the data cube and flist
-            Nx = int(args.side_length / args.angular_resolution)
-            ix = np.floor(pos_galaxies[:,0] / args.angular_resolution).astype(np.int32)
-            iy = np.floor(pos_galaxies[:,1] / args.angular_resolution).astype(np.int32)
+                ### Save intensities 
 
-            if args.use_logz:
-                logz_min_p1 = np.log10(1 + args.redshift_min)
-                logz_max_p1 = np.log10(1 + args.redshift_max)
-                Nz = int( (logz_max_p1 - logz_min_p1) / args.dz )
-                iz = np.floor((np.log10(1 + pos_galaxies[:,2]) - logz_min_p1) / args.dz).astype(np.int32)
-            else:
-                Nz = int( (args.redshift_max - args.redshift_min) / args.dz )
-                iz = np.floor((pos_galaxies[:,2] - args.redshift_min) / args.dz).astype(np.int32)
+                for line_name in list(line_dict.keys()):
+                    freq_obs = line_dict[line_name][0] / ( 1. + pos_galaxies[:,2] )
 
-            indices = np.array([ix, iy, iz]).T # (num_galaxies, 3)
+                    iz = np.searchsorted(flist, freq_obs, side="right") - 1
 
-            npix = np.array([Nx, Nx, Nz])
-            valid_mask = np.all((indices >= 0) & (indices < npix), axis=1)            
+                    indices = np.array([ix, iy, iz]).T # (num_galaxies, 3)
 
-            if np.sum(valid_mask) > 0:
-                indices_valid = indices[valid_mask]
-                sfr_valid = sfr[valid_mask]
-                
-                total_intensity = np.zeros((Nx, Nx, Nz), dtype=np.float32)
-                np.add.at(total_intensity, (indices_valid[:, 0], indices_valid[:, 1], indices_valid[:, 2]), sfr_valid)
-
-                with h5py.File(args.output_fname, "w") as f:
-
-                    args_dict = vars(args)
-                    args_dict = {k: (v if v is not None else "None") for k, v in args_dict.items()}
-                    for key, value in args_dict.items():
-                        f.attrs[key] = value
+                    valid_mask = np.all((indices >= 0) & (indices < npix), axis=1)
                     
-                    f.create_dataset("SFR", data=total_intensity, compression="gzip")
+                    intensity_line = np.zeros((Nx, Nx, Nz), dtype=np.float32)
 
-                print("SFR map saved to {}".format(args.output_fname))
+                    if np.sum(valid_mask) > 0:
+                        indices_valid = indices[valid_mask]
+                        log_sfr_valid = log_sfr[valid_mask]
+                        z_valid = redshift_real[valid_mask]
+                        log_lumi_dis_valid = log_lumi_dis[valid_mask]
 
-            else:
-                print("No valid galaxies found within the specified bounds. No data saved.")        
+                        log_lumi_valid = calc_line_luminosity(args, z_valid, log_sfr_valid, line_name)
+                        flux_valid = 10 ** ( log_lumi_valid - 2 * log_lumi_dis_valid ) / ( 4. * np.pi ) # [erg/s/cm2]
+                        
+                        print("# Found {} valid galaxies for {}; Total flux {:.3e}".format(np.sum(valid_mask), line_name, np.sum(flux_valid)))
+
+                        intensity_valid = flux_valid / dflist[indices_valid[:, 2]] / Jy / ( args.angular_resolution * arcsec )**2 # [Jy/sr]
+                            
+                        np.add.at(intensity_line, (indices_valid[:, 0], indices_valid[:, 1], indices_valid[:, 2]), intensity_valid)
+
+                        total_intensity += intensity_line
+
+                        f.create_dataset("intensity_{}".format(line_name), data=intensity_line, compression="gzip")
+
+                f.create_dataset("total_intensity", data=total_intensity, compression="gzip")
+
+            print("Intensity map saved to {}".format(args.output_fname))
         
 if __name__ == "__main__":
     args = parse_args()
