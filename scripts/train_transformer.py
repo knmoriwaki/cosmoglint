@@ -14,7 +14,7 @@ from torch.distributions import Beta
 import torch.nn.functional as F
 
 from lim_mock_generator.utils.training_utils import MyDataset
-from lim_mock_generator.model.transformer import my_model
+from lim_mock_generator.model.transformer import transformer_model
 
 def parse_args():
 
@@ -53,6 +53,7 @@ def parse_args():
 
 def train_model(args):
 
+    np.random.seed(args.seed)
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed(args.seed)
     torch.backends.cudnn.deterministic = True
@@ -95,7 +96,7 @@ def train_model(args):
     print("# Validation data: {:d}".format(len(val_dataset)))
 
     ### Define model
-    model = my_model(args)
+    model = transformer_model(args)
     model.to(device)
     print(model)
 

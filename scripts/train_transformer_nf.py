@@ -12,7 +12,7 @@ from torch.utils.data import DataLoader, WeightedRandomSampler
 from torch.utils.data import random_split
 
 from lim_mock_generator.utils.training_utils import MyDataset, my_load_model, my_save_model
-from lim_mock_generator.model.transformer_nf import my_model, my_flow_model, my_stop_predictor, calculate_loss
+from lim_mock_generator.model.transformer_nf import transformer_nf_model, my_stop_predictor, calculate_transformer_nf_loss
 
 def parse_args():
 
@@ -80,7 +80,7 @@ def train_model(args):
             bin_indices = torch.bucketize(x, bins)
             counts = torch.bincount(bin_indices)
             weights = 1. / counts[bin_indices]
-            weights = torch.clamp(weights, min=0.05, max=1) # avoid too small weights
+            weights = torch.clamp(weights, min=0.02, max=1) # avoid too small weights
             return WeightedRandomSampler(weights.tolist(), len(weights), replacement=True)
 
         sampler = get_sampler(train_dataset.dataset.x[train_dataset.indices][:,0])
@@ -98,24 +98,19 @@ def train_model(args):
     print(f"# Validation data: {len(val_dataset)}")
 
     ### Load model
-    model = my_model(args)
-    flow = my_flow_model(args)
-    #stop_predictor = my_stop_predictor(args)
-
+    model, flow = transformer_nf_model(args)
+    
     if args.load_epoch > 0:
         my_load_model(model, f"{args.output_dir}/model_ep{args.load_epoch}.pth")
         my_load_model(flow, f"{args.output_dir}/flow_ep{args.load_epoch}.pth")
-        #my_load_model(stop_predictor, f"{args.output_dir}/stop_predictor_ep{args.load_epoch}.pth")
-
+        
     model.to(device)
     flow.to(device)
-    #stop_predictor.to(device)
-
+    
     if args.verbose:
         print(model)
         print(flow)
-        #print(stop_predictor)
-
+        
     ### Save arguments
     args.norm_params = norm_params.tolist()
     fname = f"{args.output_dir}/args.json"
@@ -124,7 +119,7 @@ def train_model(args):
     print(f"# Arguments saved to {fname}")
 
     ### Training
-    params = list(model.parameters()) + list(flow.parameters()) # + list(stop_predictor.parameters())
+    params = list(model.parameters()) + list(flow.parameters()) 
     optimizer = torch.optim.Adam(params, lr=args.lr, weight_decay=1e-3)
     scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.99, last_epoch=args.load_epoch-1)
 
@@ -133,55 +128,47 @@ def train_model(args):
     with open(fname_log, mode) as f:
         f.write(f"#epoch loss loss_val\n")
 
-    num_batches = len(train_dataloader)
-    for epoch in tqdm(range(args.num_epochs)):
-        model.train()
-
-        count = 0
-        for condition, seq, mask, stop in train_dataloader:
-
-            model.eval() # val evaluation first for ActNorm in flow
-            for condition_val, seq_val, mask_val, stop_val in val_dataloader:
-                with torch.no_grad():
-                    #loss_val, loss_stop_val = calculate_loss(model, flow, condition_val, seq_val, mask_val, stop=stop_val, stop_predictor=stop_predictor)
-                    #loss_val += args.lambda_stop * loss_stop_val
-                    loss_val = calculate_loss(model, flow, condition_val, seq_val, mask_val)
-                    break # show one batch result only
-
+        num_batches = len(train_dataloader)
+        for epoch in tqdm(range(args.num_epochs)):
             model.train()
-            optimizer.zero_grad()
-            
-            #loss, loss_stop = calculate_loss(model, flow, stop_predictor, condition, seq, mask, stop)
-            #loss += args.lambda_stop * loss_stop
-            loss = calculate_loss(model, flow, condition, seq, mask)
 
-            loss.backward()
-            optimizer.step()
-        
-            epoch_now = epoch + count / num_batches
-            if args.load_epoch > 0:
-                epoch_now += args.load_epoch
-            with open(fname_log, "a") as f:
+            count = 0
+            for condition, seq, mask in train_dataloader:
+
+                model.eval() # val evaluation first for ActNorm in flow
+                for condition_val, seq_val, mask_val, in val_dataloader:
+                    with torch.no_grad():
+                        loss_val = calculate_transformer_nf_loss(model, flow, condition_val, seq_val, mask_val)
+                        break # show one batch result only
+
+                model.train()
+                optimizer.zero_grad()
+                
+                loss = calculate_transformer_nf_loss(model, flow, condition, seq, mask)
+
+                loss.backward()
+                optimizer.step()
+            
+                epoch_now = epoch + count / num_batches
+                if args.load_epoch > 0:
+                    epoch_now += args.load_epoch
+                
                 f.write(f"{epoch_now:.4f} {loss.item():.4f} {loss_val.item():.4f}\n")
-
-            #tqdm.write(f"{epoch_now:.4f} {loss.item():.4f} {(args.lambda_stop*loss_stop).item():.4f} {loss_val.item():.4f} {(args.lambda_stop*loss_stop_val).item():.4f}")
             
-            count += 1
+                count += 1
 
-        scheduler.step()
+            scheduler.step()
 
-        if epoch + 1 == args.num_epochs or (epoch + 1) % args.save_freq == 0:
-            my_save_model(model, f"{args.output_dir}/model.pth")
-            my_save_model(flow, f"{args.output_dir}/flow.pth")
-            #my_save_model(stop_predictor, f"{args.output_dir}/stop_predictor.pth")
-
-            epoch_now = epoch + 1
-            if args.load_epoch > 0:
-                epoch_now += args.load_epoch
-            my_save_model(model, f"{args.output_dir}/model_ep{epoch_now}.pth")
-            my_save_model(flow, f"{args.output_dir}/flow_ep{epoch_now}.pth")
-            #my_save_model(stop_predictor, f"{args.output_dir}/stop_predictor_ep{epoch_now}.pth")
-    
+            if epoch + 1 == args.num_epochs or (epoch + 1) % args.save_freq == 0:
+                my_save_model(model, f"{args.output_dir}/model.pth")
+                my_save_model(flow, f"{args.output_dir}/flow.pth")
+                
+                epoch_now = epoch + 1
+                if args.load_epoch > 0:
+                    epoch_now += args.load_epoch
+                my_save_model(model, f"{args.output_dir}/model_ep{epoch_now}.pth")
+                my_save_model(flow, f"{args.output_dir}/flow_ep{epoch_now}.pth")
+                
 if __name__ == "__main__":
     args = parse_args()
     os.makedirs(args.output_dir, exist_ok=True)

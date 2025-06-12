@@ -4,7 +4,74 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-def calculate_loss(transformer, flow, condition, seq, mask, stop=None, stop_predictor=None):
+from .base import Transformer1, Transformer2, Transformer3, Transformer1WithAttn, Transformer2WithAttn, Transformer3WithAttn
+
+def transformer_nf_model(args, **kwargs):
+    
+    ### Transformer model ###
+    if args.model_name == "transformer1":
+        model_class = Transformer1
+    elif args.model_name == "transformer2":
+        model_class = Transformer2
+    elif args.model_name == "transformer3":
+        model_class = Transformer3
+    elif args.model_name == "transformer1_with_attn":
+        model_class = Transformer1WithAttn
+    elif args.model_name == "transformer2_with_attn":
+        model_class = Transformer2WithAttn
+    elif args.model_name == "transformer3_with_attn":
+        model_class = Transformer3WithAttn
+    else:
+        raise ValueError(f"Invalid model: {args.model_name}")
+    
+    model = model_class(num_condition=1, d_model=args.d_model, num_layers=args.num_layers, num_heads=args.num_heads, max_length=args.max_length, num_features_in=args.num_features, num_features_out=args.num_context, last_activation=nn.Tanh(), pred_prob=False, **kwargs)
+
+    ### Flow model ###
+    transforms = []
+    for ilayer in range(args.num_flows):
+        #transforms.append(ActNorm(args.num_features_out)) # for stabilyzing training and quick convergence
+        transforms.append(
+            AffineCouplingTransform(
+                #mask=torch.arange(args.num_features_out) % 2,
+                mask = torch.arange(args.num_features) % 2 if ilayer % 2 == 0 else (torch.arange(args.num_features) + 1) % 2,
+                transform_net_create_fn=lambda in_features, out_features: ResidualNet(
+                    in_features=in_features,
+                    out_features=out_features,
+                    hidden_features=args.hidden_dim,
+                    context_features=args.num_context,
+                    num_blocks=2,
+                    activation=nn.ReLU()
+                )
+            )
+        )
+        transforms.append(PiecewiseRationalQuadraticCDF(shape=[args.num_features], num_bins=8, tails='linear', tail_bound=3.0))
+        transforms.append(RandomPermutation(args.num_features))
+        
+    transform = CompositeTransform(transforms)
+    
+    if args.base_dist == "normal":
+        base_dist = StandardNormal(shape=[args.num_features])
+    elif args.base_dist == "conditional_normal":
+        base_dist = ConditionalDiagonalNormal(shape=[args.num_features], 
+            context_encoder=nn.Sequential(nn.Linear(args.num_context, args.hidden_dim), 
+                                          nn.LeakyReLU(), 
+                                          nn.Linear(args.hidden_dim, 2 * args.num_features)
+            )
+        )
+
+    elif args.base_dist == "bimodal":
+        base_dist = BimodalNormal(shape=[args.num_features], offset=2.0)
+    elif args.base_dist == "conditional_bimodal":
+        base_dist = ConditionalBimodal(context_dim=args.num_context, latent_dim=args.num_features, hidden_dim=args.hidden_dim)
+    else:
+        raise ValueError(f"Invalid base distribution: {args.base_dist}")
+    flow = Flow(transform, base_dist)
+
+    return model, flow
+    
+
+
+def calculate_transformer_nf_loss(transformer, flow, condition, seq, mask, stop=None, stop_predictor=None):
     device = next(transformer.parameters()).device
     condition = condition.to(device)
     seq = seq.to(device)
@@ -32,7 +99,7 @@ def calculate_loss(transformer, flow, condition, seq, mask, stop=None, stop_pred
     else:
         return loss
 
-def generate(transformer, flow, x_cond, stop_predictor=None, stop_threshold=None):
+def generate_with_transformer_nf(transformer, flow, x_cond, stop_predictor=None, stop_threshold=None):
     transformer.eval()
     flow.eval()
     if stop_predictor is not None:
@@ -73,28 +140,6 @@ def generate(transformer, flow, x_cond, stop_predictor=None, stop_threshold=None
 
     return x_seq
 
-
-def my_model(args):
-    
-    if args.model_name == "transformer1":
-        model_class = Transformer1
-    elif args.model_name == "transformer2":
-        model_class = Transformer2
-    elif args.model_name == "transformer3":
-        model_class = Transformer3
-    elif args.model_name == "transformer1_with_attn":
-        model_class = Transformer1WithAttn
-    elif args.model_name == "transformer2_with_attn":
-        model_class = Transformer2WithAttn
-    elif args.model_name == "transformer3_with_attn":
-        model_class = Transformer3WithAttn
-    else:
-        raise ValueError(f"Invalid model: {args.model_name}")
-    
-    model = model_class(num_condition=1, d_model=args.d_model, num_layers=args.num_layers, num_heads=args.num_heads, max_length=args.max_length, num_features_in=args.num_features, num_features_out=args.num_context)
-
-    return model
-
 def my_stop_predictor(args):
     return StopPredictor(context_dim=args.num_context, hidden_dim=args.hidden_dim_stop)
 
@@ -113,237 +158,6 @@ class StopPredictor(nn.Module):
         x = self.layers(context)
         return x.squeeze(-1)  # (batch_size,) in [0, 1]
 
-
-class TransformerBase(nn.Module):
-    def __init__(self, num_condition=1, d_model=128, num_layers=4, num_heads=8, max_length=10, num_features_in=1, num_features_out=1, dropout=0):
-        super().__init__()
-
-        self.d_model = d_model
-        self.max_length = max_length
-        self.num_features_in = num_features_in
-        self.num_features_out = num_features_out
-
-    def forward(self, context, x):
-        raise NotImplementedError("forward method not implemented")
-
-    def generate_square_subsequent_mask(self, sz):
-        mask = torch.triu(torch.ones(sz, sz), diagonal=1)
-        mask = mask.masked_fill(mask==1, float('-inf'))
-        return mask
-
-class Transformer1(TransformerBase): # add logM at first in the sequence
-    def __init__(self, num_condition=1, d_model=128, num_layers=4, num_heads=8, max_length=10, num_features_in=1, num_features_out=1, dropout=0):
-        super().__init__(num_condition=num_condition, d_model=d_model, num_layers=num_layers, num_heads=num_heads, max_length=max_length, num_features_in=num_features_in, num_features_out=num_features_out, dropout=dropout)
-
-        _d_model = d_model - 1
-
-        self.embedding_layers = nn.Sequential(
-            nn.Linear(num_features_in, _d_model),
-            nn.LeakyReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(_d_model, _d_model),
-        ) 
-        self.context_embedding_layers = nn.Sequential(
-            nn.Linear(num_condition, _d_model),
-            nn.LeakyReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(_d_model, _d_model),
-        )
-
-        self.pos_embedding = nn.Parameter(torch.randn(1, max_length, 1))
-
-        decoder_layer = nn.TransformerDecoderLayer(d_model=d_model, nhead=num_heads, batch_first=True, dropout=dropout)
-        self.decoder = nn.TransformerDecoder(decoder_layer, num_layers=num_layers)
-
-        self.output_layer = nn.Linear(d_model, num_features_out) 
-
-        self.out_activation = nn.Tanh()
-
-    def forward(self, context, x):
-        # context: (batch, num_condition)
-        # x: (batch, seq_length, num_features_in)
-        
-        batch_size, seq_length, num_features_in = x.shape  
-        total_seq_length = seq_length + 1 # add start token (=context)
-
-        # concatenate embeddings of context and x 
-        context = context.view(batch_size, 1, -1) # (batch, 1, num_condition)
-        for layer in self.context_embedding_layers:
-            context = layer(context)  
-        # context: (batch, 1, d_model - 1)
-
-        for layer in self.embedding_layers:
-            x = layer(x)
-        x = torch.cat([context, x], dim=1)  # (batch, seq_length + 1, d_model - 1)
-        
-        # cat position embedding
-        position = self.pos_embedding[:,:total_seq_length, :].expand(batch_size, -1, -1) # (batch, seq_length + 1, 1)
-        x = torch.cat([x, position], dim=2)  # (batch, seq_length + 1, d_model + 1)
-
-        # decode
-        causal_mask = self.generate_square_subsequent_mask(total_seq_length).to(x.device)
-        dummy_memory = torch.zeros(batch_size, 1, self.d_model, device=x.device)
-        x = self.decoder(x, memory=dummy_memory, tgt_mask=causal_mask)  # (batch, seq_length + 1, d_model + 1)
-    
-        # output layer
-        x = self.output_layer(x)  # (batch, seq_length + 1, num_features_out)
-        x = self.out_activation(x)
-
-        return x
-
-
-class Transformer2(TransformerBase): # embed context, position, and x together
-    def __init__(self, num_condition=1, d_model=128, num_layers=4, num_heads=8, max_length=10, num_features_in=1, num_features_out=1, dropout=0):
-        
-        super().__init__(num_condition=num_condition, d_model=d_model, num_layers=num_layers, num_heads=num_heads, max_length=max_length, num_features_in=num_features_in, num_features_out=num_features_out, dropout=dropout)
-        
-        self.start_token = torch.ones(1) 
-        
-        self.position_ids = torch.linspace(0, 1, max_length) # (max_length+1, )
-        
-        self.embedding_layers = nn.Sequential(
-            nn.Linear(num_condition+num_features_in+1, d_model),
-            nn.LeakyReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(d_model, d_model),
-        )
-
-        decoder_layer = nn.TransformerDecoderLayer(d_model=d_model, nhead=num_heads, batch_first=True, dropout=dropout)
-        self.decoder = nn.TransformerDecoder(decoder_layer, num_layers=num_layers)
-
-        self.output_layer = nn.Linear(d_model, num_features_out)
-
-        self.out_activation = nn.Tanh()
-    
-    def forward(self, context, x):
-        # context: (batch, num_condition)
-        # x: (batch, seq_length, num_features_in)
-
-        batch_size, seq_length, num_features_in = x.shape  
-
-        context = context.view(batch_size, 1, -1) # (batch, 1, num_condition)
-        context = context.expand(batch_size, seq_length+1, -1) # (batch, seq_length+1, num_condition)
-
-        position = self.position_ids[:seq_length+1].to(x.device) # (seq_length+1, )
-        position = position.expand(batch_size, -1).unsqueeze(-1) # (batch, seq_length+1, 1)
-
-        ## add start token
-        start_token = self.start_token.expand(batch_size, 1, self.num_features_in).to(x.device) # (batch, 1, num_features_in)
-        x = torch.cat([start_token, x], dim=1) # (batch, seq_length+1, num_features_in) 
-
-        ## concatenate context, position ids, and x
-        x = torch.cat([context, position, x], dim=2)  # (batch, seq_length+1, num_condition + 1 + num_features_in)
-
-        ## embedding
-        for layer in self.embedding_layers:
-            x = layer(x)  
-        # x: (batch, seq_length+1, d_model)
-        
-        # decode
-        causal_mask = self.generate_square_subsequent_mask(seq_length+1).to(x.device)
-        dummy_memory = torch.zeros(batch_size, 1, self.d_model, device=x.device)
-        x = self.decoder(x, memory=dummy_memory, tgt_mask=causal_mask)  # (batch, seq_length+1, d_model)
-    
-        # output layer
-        x = self.output_layer(x)  # (batch, seq_length+1, num_features_out)
-        x = self.out_activation(x)
-
-        return x
-
-
-class Transformer3(TransformerBase): # embed x and context together and then add positional embedding
-    def __init__(self, num_condition=1, d_model=128, num_layers=4, num_heads=8, max_length=10, num_features_in=1, num_features_out=1, dropout=0):
-        super().__init__(num_condition=num_condition, d_model=d_model, num_layers=num_layers, num_heads=num_heads, max_length=max_length, num_features_in=num_features_in, num_features_out=num_features_out, dropout=dropout)
-        
-        self.start_token = torch.ones(1) 
-        
-        self.pos_embedding = nn.Parameter(torch.randn(max_length, d_model))
-
-        self.embedding_layers = nn.Sequential(
-            nn.Linear(num_condition+num_features_in, d_model),
-            nn.LeakyReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(d_model, d_model),
-        )
-
-        decoder_layer = nn.TransformerDecoderLayer(d_model=d_model, nhead=num_heads, batch_first=True, dropout=dropout)
-        self.decoder = nn.TransformerDecoder(decoder_layer, num_layers=num_layers)
-
-        self.output_layer = nn.Linear(d_model, num_features_out)
-
-        self.out_activation = nn.Tanh()
-    
-    def forward(self, context, x):
-        # context: (batch, num_condition)
-        # x: (batch, seq_length, num_features_in)
-
-        batch_size, seq_length, num_features_in = x.shape  
-
-        context = context.view(batch_size, 1, -1) # (batch, 1, num_condition)
-        context = context.expand(batch_size, seq_length+1, -1) # (batch, seq_length+1, num_condition)
-
-        ## add start token
-        start_token = self.start_token.expand(batch_size, 1, self.num_features_in).to(x.device) 
-        x = torch.cat([start_token, x], dim=1) # (batch, seq_length+1, num_features_in) 
-
-        ## concatenate context, position ids, and x
-        x = torch.cat([context, x], dim=-1)  # (batch, seq_length+1, num_condition+1)
-
-        ## embedding
-        for layer in self.embedding_layers:
-            x = layer(x)
-        # x: (batch, seq_length+1, d_model)
-
-        x = x + self.pos_embedding[:seq_length+1, :].unsqueeze(0) # (batch, seq_length+1, d_model)
-            
-        # mask for padding
-        causal_mask = self.generate_square_subsequent_mask(seq_length+1).to(x.device)
-
-        # decoder        
-        dummy_memory = torch.zeros(batch_size, 1, self.d_model, device=x.device)
-        x = self.decoder(x, memory=dummy_memory, tgt_mask=causal_mask)  # (batch, seq_length+1, d_model)
-    
-        # output layer
-        x = self.output_layer(x)  # (batch, seq_length+1, num_features_out)
-        x = self.out_activation(x)
-
-        return x
-
-from typing import Optional
-
-class TransformerDecoderLayerWithAttn(nn.TransformerDecoderLayer):
-    def _sa_block(self, x: torch.Tensor, attn_mask: Optional[torch.Tensor],
-                  key_padding_mask: Optional[torch.Tensor], is_causal: bool = False) -> torch.Tensor:
-    
-        attn_output, attn_weights = self.self_attn(
-            x, x, x,
-            attn_mask=attn_mask,
-            key_padding_mask=key_padding_mask,
-            need_weights=True,
-            is_causal=is_causal,
-        )
-
-        self.attn_weights = attn_weights.detach().cpu()
-        return self.dropout1(attn_output)
-    
-
-class Transformer1WithAttn(Transformer1):
-    def __init__(self, num_condition=1, d_model=128, num_layers=4, num_heads=8, max_length=10, num_features_in=1, num_features_out=1, dropout=0):
-        super().__init__(num_condition=num_condition, d_model=d_model, num_layers=num_layers, num_heads=num_heads, max_length=max_length, num_features_in=num_features_in, num_features_out=num_features_out, dropout=dropout)
-        decoder_layer = TransformerDecoderLayerWithAttn(d_model=d_model, nhead=num_heads, batch_first=True, dropout=dropout)
-        self.decoder = nn.TransformerDecoder(decoder_layer, num_layers=num_layers)
-
-class Transformer2WithAttn(Transformer2):
-    def __init__(self, num_condition=1, d_model=128, num_layers=4, num_heads=8, max_length=10, num_features_in=1, num_features_out=1, dropout=0):
-        super().__init__(num_condition=num_condition, d_model=d_model, num_layers=num_layers, num_heads=num_heads, max_length=max_length, num_features_in=num_features_in, num_features_out=num_features_out, dropout=dropout)
-        decoder_layer = TransformerDecoderLayerWithAttn(d_model=d_model, nhead=num_heads, batch_first=True, dropout=dropout)
-        self.decoder = nn.TransformerDecoder(decoder_layer, num_layers=num_layers)
-
-class Transformer3WithAttn(Transformer3):
-    def __init__(self, num_condition=1, d_model=128, num_layers=4, num_heads=8, max_length=10, num_features_in=1, num_features_out=1, dropout=0):
-        super().__init__(num_condition=num_condition, d_model=d_model, num_layers=num_layers, num_heads=num_heads, max_length=max_length, num_features_in=num_features_in, num_features_out=num_features_out, dropout=dropout)
-        decoder_layer = TransformerDecoderLayerWithAttn(d_model=d_model, nhead=num_heads, batch_first=True, dropout=dropout)
-        self.decoder = nn.TransformerDecoder(decoder_layer, num_layers=num_layers)
 
 
 from nflows.flows import Flow
@@ -465,48 +279,4 @@ class ConditionalBimodal(nn.Module):
         """
         dist = self.get_distribution(context)
         return dist.log_prob(x)
-    
-
-def my_flow_model(args):
-    transforms = []
-    for ilayer in range(args.num_flows):
-        #transforms.append(ActNorm(args.num_features_out)) # for stabilyzing training and quick convergence
-        transforms.append(
-            AffineCouplingTransform(
-                #mask=torch.arange(args.num_features_out) % 2,
-                mask = torch.arange(args.num_features) % 2 if ilayer % 2 == 0 else (torch.arange(args.num_features) + 1) % 2,
-                transform_net_create_fn=lambda in_features, out_features: ResidualNet(
-                    in_features=in_features,
-                    out_features=out_features,
-                    hidden_features=args.hidden_dim,
-                    context_features=args.num_context,
-                    num_blocks=2,
-                    activation=nn.ReLU()
-                )
-            )
-        )
-        transforms.append(PiecewiseRationalQuadraticCDF(shape=[args.num_features], num_bins=8, tails='linear', tail_bound=3.0))
-        transforms.append(RandomPermutation(args.num_features))
-        
-    transform = CompositeTransform(transforms)
-    
-    if args.base_dist == "normal":
-        base_dist = StandardNormal(shape=[args.num_features])
-    elif args.base_dist == "conditional_normal":
-        base_dist = ConditionalDiagonalNormal(shape=[args.num_features], 
-            context_encoder=nn.Sequential(nn.Linear(args.num_context, args.hidden_dim), 
-                                          nn.LeakyReLU(), 
-                                          nn.Linear(args.hidden_dim, 2 * args.num_features)
-            )
-        )
-
-    elif args.base_dist == "bimodal":
-        base_dist = BimodalNormal(shape=[args.num_features], offset=2.0)
-    elif args.base_dist == "conditional_bimodal":
-        base_dist = ConditionalBimodal(context_dim=args.num_context, latent_dim=args.num_features, hidden_dim=args.hidden_dim)
-    else:
-        raise ValueError(f"Invalid base distribution: {args.base_dist}")
-    flow = Flow(transform, base_dist)
-
-    return flow
     

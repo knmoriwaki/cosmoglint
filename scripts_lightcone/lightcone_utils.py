@@ -22,7 +22,6 @@ from astropy.constants import c as cspeed # [m/s]
 from astropy.cosmology import FlatLambdaCDM
 cosmo_default = FlatLambdaCDM(H0=67.74, Om0=0.3089)
 
-
 micron = 1e-4 # [cm]
 GHz = 1e9
 Jy = 1.0e-23        # jansky (erg/s/cm2/Hz)
@@ -148,7 +147,7 @@ def generate_galaxy(args, logm, pos, redshift):
 
     print("# Use Transformer to generate SFR")
 
-    from lim_mock_generator.model.transformer import my_model
+    from lim_mock_generator.model.transformer import transformer_model
     device = torch.device("cuda:{}".format(args.gpu_id) if torch.cuda.is_available() else "cpu")
 
     generated_all = []
@@ -160,22 +159,22 @@ def generate_galaxy(args, logm, pos, redshift):
     # Snapshot numbers and suffixes for the models
     ####################################
     snapshot_dict = {
-        67: ["_ep40_bs512_w0.02", 0.5],
-        55: ["_ep40_bs512_w0.02", 0.8], 
-        49: ["_ep40_bs512_w0.02", 1.0],
-        43: ["_ep40_bs512_w0.02", 1.3],
-        40: ["_ep60_bs512_w0.02", 1.5],
-        35: ["_ep60_bs512_w0.02", 1.8],
-        33: ["_ep40_bs512_w0.02", 2.0],
-        29: ["_ep60_bs512_w0.02", 2.4],
-        25: ["_ep60_bs512_w0.02", 3.0],
-        23: ["_ep60_bs512_w0.02", 3.5],
-        21: ["_ep60_bs512_w0.02", 4.0],
-        19: ["_ep60_bs512_w0.02", 4.4],
-        17: ["_ep80_bs512_w0.02", 5.0],
-        15: ["_ep80_bs512_w0.02", 5.5],
-        13: ["_ep80_bs512_w0.02", 6.0],
-        #11: ["_ep80_bs512_w0.02", 7.0],
+        67: ["_ep40_bs512_w0.02", 0.503],
+        55: ["_ep40_bs512_w0.02", 0.817], 
+        49: ["_ep40_bs512_w0.02", 1.036],
+        43: ["_ep40_bs512_w0.02", 1.302],
+        40: ["_ep60_bs512_w0.02", 1.495],
+        35: ["_ep60_bs512_w0.02", 1.823],
+        33: ["_ep40_bs512_w0.02", 2.002],
+        29: ["_ep60_bs512_w0.02", 2.444],
+        25: ["_ep60_bs512_w0.02", 3.008],
+        23: ["_ep60_bs512_w0.02", 3.490],
+        21: ["_ep60_bs512_w0.02", 4.008],
+        19: ["_ep60_bs512_w0.02", 4.428],
+        17: ["_ep80_bs512_w0.02", 4.996],
+        15: ["_ep80_bs512_w0.02", 5.530],
+        13: ["_ep80_bs512_w0.02", 6.011],
+        #11: ["_ep80_bs512_w0.02", 7.005],
     }
     ###################################
     redshifts_of_snapshots = np.array([ v[1] for v in snapshot_dict.values() ])    
@@ -206,7 +205,7 @@ def generate_galaxy(args, logm, pos, redshift):
         xmin = norm_params[:,0]
         xmax = norm_params[:,1]
 
-        model = my_model(opt)
+        model = transformer_model(opt)
         model.to(device)
 
         model.load_state_dict(torch.load("{}/model.pth".format(model_dir)))

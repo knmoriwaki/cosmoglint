@@ -41,12 +41,12 @@ pip install -e .
 Load model:
 ```python
 import json
-from lim-mock-generator.model.transformer import my_model
+from lim-mock-generator.model.transformer import transformer_model
 
 with open(f"args.json", "r") as f:
   option = json.load(f, object_hook=lambda d: argparse.Namespace(**d))
   
-model = my_model(option)
+model = transformer_model(option)
 ```
 with a json file:
 ```json
