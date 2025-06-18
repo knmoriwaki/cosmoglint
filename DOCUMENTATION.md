@@ -1,4 +1,4 @@
-# Documentation for Transformer-based Mock Generator for Line Intensity Mapping
+# Documentation for CosmoGLINT
 
 
 ## Overview
@@ -19,14 +19,14 @@ Pre-trained models and example datasets available at: [Google Drive](https://dri
 Install from GitHub:
 
 ```bash
-pip install git+https://github.com/knmoriwaki/lim-mock-generator.git
+pip install git+https://github.com/knmoriwaki/cosmoglint.git
 ```
 
 Install from local clone:
 
 ```bash
-git clone https://github.com/knmoriwaki/lim-mock-generator.git
-cd lim-mock-generator
+git clone https://github.com/knmoriwaki/cosmoglint.git
+cd cosmoglint
 pip install .
 ```
 
@@ -41,7 +41,7 @@ pip install -e .
 Load model:
 ```python
 import json
-from lim-mock-generator.model.transformer import transformer_model
+from cosmoglint.model.transformer import transformer_model
 
 with open(f"args.json", "r") as f:
   option = json.load(f, object_hook=lambda d: argparse.Namespace(**d))
@@ -88,7 +88,7 @@ Options:
 | **`num_layers`**       | Number of transformer decoder layers stacked in the model.                                          |
 | **`num_heads`**        | Number of attention heads in the multi-head self-attention layers.                                       |
 | **`num_features_out`** | Total number of output bins for the probability distribution.  |
-| **`num_features_in`**  | Number of features per galaxy (e.g., halo mass, relative distance, radial/tangential velocity).     |
+| **`num_features_in`**  | Number of features per galaxy (e.g., SFR, relative distance, radial/tangential velocity).     |
 
 
 ---
@@ -161,7 +161,6 @@ Important options:
 Other options:
 - `--gpu_id`: GPU ID to use (default: 0).
 - `--seed`: Random seed for reproducibility (default: 12345).
-- `--NN_model_dir`: Path to a directory containing a second-stage neural network model. Only if both `--model_dir` and `--NN_model_dir` are given, galaxies are generated via a two-step method.
 - `--output_fname`: Name of the output file to write the generated data to (default: test.h5).
 - `--gen_catalog`: If set, outputs a galaxy catalog instead of a 3D data cube.
 - `--catalog_threshold`: Minimum star formation rate (SFR) [Msun/yr] for galaxies to be included in the catalog (default: 10).
@@ -172,9 +171,9 @@ Other options:
 
 ---
 
-### Create mock data
+### Create SFR density map / SFR catalog
 
-After training with multiple redshift data, you can create a mock data.
+One can also create a mock lightcone data. This requires models trained on multiple redshift.
 
 Example:
 ```bash
@@ -187,13 +186,46 @@ Important options:
 - `--output_fname`: Output filename (HDF5 format).
 - `--model_dir`: Path to a directory containing the directories of trained models. The names of the directories to be used for each redshift bin is hardcoded in `lightcone_utils.py`.
 - `--redshift_space`: If set, generate output in redshift space.
+- `redshift_min`, `--redshift_max`: Redshift range for the lightcone.
+- `dz`: Redshift bin width. Indicates dlogz if `--use_logz` is given.
+- `use_logz`: Use dlogz instead of dz for redshift binning.
+- `--side_length`, `--angular_resolution`: Angular size and resolution (arcsec) of the simulated map.
+- `--gen_catalog`: If set, generate a galaxy catalog with SFR greater than --catalog_threshold.
+- `--catalog_threshold`: SFR threshold for inclusion in the catalog.
+
+Other options:
+- `--gpu_id`: GPU ID to use (default: 0).
+- `--seed`: Random seed for reproducibility (default: 12345).
+- `--param_dir`: Path to a directory containing the parameter file of max ids.
+- `--gen_both`: If set, generate both real and redshift space data.
+- `--redshift_min`, --redshift_max: Minimum and maximum redshift range for the mock data.
+- `--logm_min`: Minimum log halo mass for selecting galaxies.
+- `--threshold`: Minimum SFR threshold for emission line generation.
+- `--mass_correction_factor`: Multiplier applied to halo mass before galaxy generation (default: 1.0). Useful if calibration is needed.
+
+--- 
+
+### Create Line intensity map
+
+Example:
+```bash
+cd scripts_lightcone
+python create_mock.py --input_fname [input_fname] --model_dir [model_dir]
+```
+
+Important options:
+- `--input_fname`: Path to the lightcone data. Pinocchio format is supported.
+- `--output_fname`: Output filename (HDF5 format).
+- `--model_dir`: Path to a directory containing the directories of trained models. The names of the directories to be used for each redshift bin is hardcoded in `lightcone_utils.py`.
+- `--redshift_space`: If set, generate output in redshift space.
 - `--side_length`, `--angular_resolution`: Angular size and resolution (arcsec) of the simulated map.
 - `--fmin`,`--fmax`: Frequency range [GHz] for the mock cube.
 - `--R`: Spectral resolution 
 
 Other options:
+- `--gpu_id`: GPU ID to use (default: 0).
 - `--seed`: Random seed for reproducibility (default: 12345).
-- `--NN_model_dir`: Path to the directory containing the neural network model for intensity prediction.
+- `--param_dir`: Path to a directory containing the parameter file of max ids.
 - `--sigma`: Log-normal scatter [dex] added to the luminosity–SFR relation.
 - `--gen_both`: If set, generate both real and redshift space data.
 - `--redshift_min`, --redshift_max: Minimum and maximum redshift range for the mock data.
@@ -201,7 +233,8 @@ Other options:
 - `--threshold`: Minimum SFR threshold for emission line generation.
 - `--gen_catalog`: If set, generate a galaxy catalog with SFR greater than --catalog_threshold.
 - `--catalog_threshold`: SFR threshold for inclusion in the catalog.
-- `--max_ids_file`: File containing maximum IDs for SFR
+- `--mass_correction_factor`: Multiplier applied to halo mass before galaxy generation (default: 1.0). Useful if calibration is needed.
+
 
 ---
 

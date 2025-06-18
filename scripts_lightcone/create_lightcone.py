@@ -38,9 +38,6 @@ def parse_args():
     parser.add_argument("--input_fname", type=str, default="./Pinocchio/output/pinocchio.r01000.plc.out")
     parser.add_argument("--output_fname", type=str, default="test.h5")
 
-    ### line model parameters
-    parser.add_argument("--sigma", type=float, default=0.2, help="The scatter in log [dex] added to luminosity - SFR relation")
-
     ### Output format parameters
     parser.add_argument("--redshift_space", action="store_true", default=False, help="Use redshift space")
     parser.add_argument("--gen_both", action="store_true", default=False, help="Generate both real and redshift space data")
@@ -64,7 +61,6 @@ def parse_args():
     
     ### Generative model parameters
     parser.add_argument("--model_dir", type=str, default=None, help="The directory of the model. If not given, use 4th column as intensity.")
-    parser.add_argument("--NN_model_dir", type=str, default=None, help="The directory of the NN model.") 
     parser.add_argument("--param_dir", type=str, default=None, help="The directory of the parameter files")
 
     return parser.parse_args()
@@ -110,15 +106,10 @@ def create_mock(args):
         
     else:
         if "Transformer_NF" in args.model_dir:
-            from lightcone_utils import generate_galaxy_TransNF
-            generated, pos_central, redshift_real_central, flag_central = generate_galaxy_TransNF(args, logm, pos, redshift_real)
+            ValueError("Transformer_NF model is not supported yet. Please use a different model.")
         else:
-            if args.NN_model_dir is not None:
-                from lightcone_utils import generate_galaxy_two_step
-                generated, pos_central, redshift_real_central, flag_central = generate_galaxy_two_step(args, logm, pos, redshift_real)
-            else:
-                from lightcone_utils import generate_galaxy
-                generated, pos_central, redshift_real_central, flag_central = generate_galaxy(args, logm, pos, redshift_real)
+            from lightcone_utils import generate_galaxy
+            generated, pos_central, redshift_real_central, flag_central = generate_galaxy(args, logm, pos, redshift_real)
 
         sfr = generated[:,0]
         distance = generated[:,1]
@@ -156,6 +147,11 @@ def create_mock(args):
             pos_galaxies[:,2] += vz_gal / scale_factor / H * hlittle
 
         if args.gen_catalog:
+
+            mask = (sfr > args.catalog_threshold)
+            pos_galaxies = pos_galaxies[mask]
+            redshift_real = redshift_real[mask]
+            sfr = sfr[mask]
             
             with h5py.File(args.output_fname, "w") as f:
                 

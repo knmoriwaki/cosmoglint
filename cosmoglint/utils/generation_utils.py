@@ -72,7 +72,7 @@ def generate_galaxy(args, logm, pos, vel):
 
     print("# Use Transformer to generate SFR")
 
-    from lim_mock_generator.model.transformer import transformer_model
+    from cosmoglint.model.transformer import transformer_model
     device = torch.device("cuda:{}".format(args.gpu_id) if torch.cuda.is_available() else "cpu")
 
     ### load Transformer
@@ -162,7 +162,7 @@ def generate_galaxy_TransNF(args, logm, pos, vel):
 
     print("# Use Transformer-NF to generate galaxies")
 
-    from lim_mock_generator.model.transformer_nf import transformer_nf_model, generate_with_transformer_nf
+    from cosmoglint.model.transformer_nf import transformer_nf_model, generate_with_transformer_nf
     device = torch.device("cuda:{}".format(args.gpu_id) if torch.cuda.is_available() else "cpu")
     print("Using device: ", device)
 

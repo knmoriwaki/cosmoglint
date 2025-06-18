@@ -20,8 +20,6 @@ irun_id=$(printf "%05d" $irun)
 input_fname=../dataset/Pinocchio/my_lightcone/output/pinocchio.r${irun_id}.plc.out
 
 dz=0.001
-dz=0.005
-dz=0.0010
 
 output_fname=${output_dir}/pinocchio.run${irun}.${side_length}sec_zmin${zmin}_zmax${zmax}_dz${dz}.h5
 

@@ -19,7 +19,7 @@ from astropy.cosmology import FlatLambdaCDM
 cosmo = FlatLambdaCDM(H0=67.74, Om0=0.3089)
 import astropy.units as u
 
-from lim_mock_generator.utils.generation_utils import save_intensity_data, save_catalog_data
+from cosmoglint.utils.generation_utils import save_intensity_data, save_catalog_data
 
 cspeed = 3e10 # [cm/s]
 micron = 1e-4 # [cm]
@@ -54,7 +54,6 @@ def parse_args():
 
     ### Generative model parameters
     parser.add_argument("--model_dir", type=str, default=None, help="The directory of the model. If not given, use 7th column as intensity.")
-    parser.add_argument("--NN_model_dir", type=str, default=None, help="The directory of the NN model. If both model_dir and NN_model_dir are given, the galaxies are generated with two-step method.") 
     parser.add_argument("--prob_threshold", type=float, default=1e-5, help="Below this probability, the galaxy is not generated.")
     parser.add_argument("--max_ids_file", type=str, default=None, help="File containing maximum IDs for SFR.")
 
@@ -80,7 +79,7 @@ def create_data(args):
         match = re.search(r'pinocchio\.([0-9]+\.[0-9]+)', args.input_fname)
         redshift = float(match.group(1))
             
-        import lim_mock_generator.utils.ReadPinocchio5 as rp
+        import cosmoglint.utils.ReadPinocchio5 as rp
         mycat = rp.catalog(args.input_fname)
         
         hlittle = cosmo.H(0).to(u.km/u.s/u.Mpc).value / 100.0 
@@ -164,15 +163,11 @@ def create_data(args):
 
     else:
         if "Transformer_NF" in args.model_dir:
-            from lim_mock_generator.utils.generation_utils import generate_galaxy_TransNF
+            from cosmoglint.utils.generation_utils import generate_galaxy_TransNF
             generated, pos_central, vel_central, flag_central = generate_galaxy_TransNF(args, logm, pos, vel)
         else:
-            if args.NN_model_dir is not None:
-                from lim_mock_generator.utils.generation_utils import generate_galaxy_two_step
-                generated, pos_central, vel_central, flag_central = generate_galaxy_two_step(args, logm, pos, vel)
-            else:
-                from lim_mock_generator.utils.generation_utils import generate_galaxy
-                generated, pos_central, vel_central, flag_central = generate_galaxy(args, logm, pos, vel)
+            from cosmoglint.utils.generation_utils import generate_galaxy
+            generated, pos_central, vel_central, flag_central = generate_galaxy(args, logm, pos, vel)
 
         sfr = generated[:,0]
         distance = generated[:,1]

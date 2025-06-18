@@ -66,7 +66,6 @@ def parse_args():
 
     ### Generative model parameters
     parser.add_argument("--model_dir", type=str, default=None, help="The directory of the model. If not given, use 4th column as intensity.")
-    parser.add_argument("--NN_model_dir", type=str, default=None, help="The directory of the NN model.") 
     parser.add_argument("--param_dir", type=str, default=None, help="The directory of the parameter files")
 
     return parser.parse_args()
@@ -112,15 +111,10 @@ def create_mock(args):
         
     else:
         if "Transformer_NF" in args.model_dir:
-            from lightcone_utils import generate_galaxy_TransNF
-            generated, pos_central, redshift_real_central, flag_central = generate_galaxy_TransNF(args, logm, pos, redshift_real)
+            ValueError("Transformer_NF model is not supported yet. Please use the old model.")
         else:
-            if args.NN_model_dir is not None:
-                from lightcone_utils import generate_galaxy_two_step
-                generated, pos_central, redshift_real_central, flag_central = generate_galaxy_two_step(args, logm, pos, redshift_real)
-            else:
-                from lightcone_utils import generate_galaxy
-                generated, pos_central, redshift_real_central, flag_central = generate_galaxy(args, logm, pos, redshift_real)
+            from lightcone_utils import generate_galaxy
+            generated, pos_central, redshift_real_central, flag_central = generate_galaxy(args, logm, pos, redshift_real)
 
         log_sfr = np.log10( generated[:,0] )
         distance = generated[:,1]

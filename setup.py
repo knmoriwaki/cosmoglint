@@ -1,10 +1,10 @@
 from setuptools import setup, find_packages
 
 setup(
-    name="lim-mock-generator",
+    name="cosmoglint",
     version="0.1.0",
     author="Kana Moriwaki",
-    url="https://github.com/knmoriwaki/lim-mock-generator",
+    url="https://github.com/knmoriwaki/cosmoglint",
     packages=find_packages(),
     install_requires=[
         "torch",

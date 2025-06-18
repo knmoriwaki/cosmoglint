@@ -17,6 +17,14 @@ from scipy.interpolate import interp1d
 
 import torch
 
+import warnings, os
+
+def short_formatwarning(msg, category, filename, lineno, line=None):
+    return f"{os.path.basename(filename)}:{lineno}: {category.__name__}: {msg}\n"
+
+warnings.formatwarning = short_formatwarning
+warnings.filterwarnings("always", category=RuntimeWarning)
+
 import astropy.units as u
 from astropy.constants import c as cspeed # [m/s]
 from astropy.cosmology import FlatLambdaCDM
@@ -85,7 +93,7 @@ def load_lightcone_data(input_fname, cosmo=cosmo_default):
             M, theta, phi, _, redshift_obs, redshift_real = load_old_plc(input_fname)
             logm = np.log10(M)
         else:
-            import lim_mock_generator.utils.ReadPinocchio5 as rp
+            import cosmoglint.utils.ReadPinocchio5 as rp
             myplc = rp.plc(input_fname)
             
             logm = np.log10( myplc.data["Mass"] )
@@ -147,7 +155,7 @@ def generate_galaxy(args, logm, pos, redshift):
 
     print("# Use Transformer to generate SFR")
 
-    from lim_mock_generator.model.transformer import transformer_model
+    from cosmoglint.model.transformer import transformer_model
     device = torch.device("cuda:{}".format(args.gpu_id) if torch.cuda.is_available() else "cpu")
 
     generated_all = []

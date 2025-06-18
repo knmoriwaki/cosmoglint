@@ -2,7 +2,6 @@
 ### based on power_box's implementation
 
 import sys
-import warnings
 try:
     from multiprocessing import cpu_count
     THREADS = cpu_count()
@@ -12,11 +11,16 @@ try:
     def ifftn(*args, **kwargs):
         return _ifftn(threads=THREADS, *args, **kwargs)
 except ImportError:
-    #warnings.warn("You do not have pyFFTW installed. Installing it should give some speed increase.")
     print("Warning: you are not using FFTW.", file=sys.stderr)
     from numpy.fft import fftn, ifftn, fftfreq 
 import numpy as np # import of numpy should be done after pyfftw import
+import warnings, os
 
+def short_formatwarning(msg, category, filename, lineno, line=None):
+    return f"{os.path.basename(filename)}:{lineno}: {category.__name__}: {msg}\n"
+
+warnings.formatwarning = short_formatwarning
+warnings.filterwarnings("always", category=RuntimeWarning)
 
 def my_fft(X, L=None, b=1.): # b = 2 * np.pi for inverse FT
 
@@ -70,7 +74,7 @@ def angular_average_nd(field, coords, nbins, n=None, log_bins=False, indx_min=0)
     # we remove these two compontnes by setting [1:-1].
     sumweights = np.bincount(indx, minlength=len(bins)+1)[1:-1] 
     if np.any(sumweights==0):
-        warnings.warn("One or more radial bins had no cell within it. Use a smaller nbins.")
+        print("Warning: one or more radial bins had no cell within it. Use a smaller nbins.")
     if np.any(sumweights==1):
         print("Warning: one or more radial bins have only one cell within it. This would result in inf in the variance")
 
@@ -132,9 +136,6 @@ def compute_power(deltax, deltax2=None, boxlength=1., nbins=20, log_bins=False):
 
     return Pk, k, var
 
-import numpy as np
-import warnings
-
 def cylindrical_average(field, coords, nbins, log_bins=False, use_same_bins=False):
 
     if field.ndim != 3 or len(coords) != 3:
@@ -179,7 +180,7 @@ def cylindrical_average(field, coords, nbins, log_bins=False, use_same_bins=Fals
     sumweights = np.bincount(combined_idx, minlength=nbins * nbins)
     sumweights = sumweights.reshape((nbins, nbins))
     if np.any(sumweights == 0):
-        warnings.warn("One or more radial bins had no cell within it. Use a smaller nbins.")
+        print("Warning: one or more radial bins had no cell within it. Use a smaller nbins.")
     if np.any(sumweights == 1):
         print("Warning: one or more radial bins have only one cell within it. This would result in inf in the variance")
 
