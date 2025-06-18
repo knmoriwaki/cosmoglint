@@ -2,7 +2,7 @@
 
 Model to generate galaxy properties for a given halo mass.
 
-A model trained with TNG300-1 at z = 0.5 - 6 as well as example input data for training and mock creation are available at [Google Drive](https://drive.google.com/drive/folders/1IFje9tNRf4Dr3NufqzlDdGMFTEDpsm35?usp=share_link).
+Models trained with TNG300-1 at z = 0.5 - 6 and generated data are available at [Google Drive](https://drive.google.com/drive/folders/1IFje9tNRf4Dr3NufqzlDdGMFTEDpsm35?usp=share_link).
 
 For detailed usage and options, see [DOCUMENTATION](./DOCUMENTATION.md).
 

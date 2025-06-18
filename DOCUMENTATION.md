@@ -9,7 +9,7 @@ This repository includes:
 - Scripts for training and mock catalog generation.
 - Example notebooks for result visualization.
 
-Pre-trained models and example datasets available at: [Google Drive](https://drive.google.com/drive/folders/1IFje9tNRf4Dr3NufqzlDdGMFTEDpsm35?usp=share_link).
+Trained models and generated data are available at: [Google Drive](https://drive.google.com/drive/folders/1IFje9tNRf4Dr3NufqzlDdGMFTEDpsm35?usp=share_link).
 
 
 ---
@@ -48,7 +48,7 @@ with open(f"args.json", "r") as f:
   
 model = transformer_model(option)
 ```
-with a json file:
+with a json file (example):
 ```json
 {"model_name": "transformer1", "max_length": 50, "d_model": 128, "num_layers": 4, "num_heads": 8, "num_features_out": 100, "num_features_in": 4}
 ```
@@ -167,7 +167,8 @@ Other options:
 - `--logm_min`: Minimum log halo mass [Msun] to be included in the mock (default: 11.0).
 - `--threshold`: Only galaxies with SFR > threshold [Msun/yr] will be used in the mock (default: 1e-3).
 - `--mass_correction_factor`: Multiplier applied to halo mass before galaxy generation (default: 1.0). Useful if calibration is needed.
-- `--max_ids_file`: File containing maximum IDs for SFR
+- `--max_sfr_file`: File containing maximum normalized SFR values for each halo mass bin (default: None).
+
 
 ---
 
@@ -182,9 +183,9 @@ python create_lightcone.py --input_fname [input_fname] --model_dir [model_dir]
 ```
 
 Important options:
-- `--input_fname`: Path to the lightcone data. Pinocchio format is supported.
+- `--input_fname`: Path to the lightcone halo catalog. Pinocchio format is supported.
 - `--output_fname`: Output filename (HDF5 format).
-- `--model_dir`: Path to a directory containing the directories of trained models. The names of the directories to be used for each redshift bin is hardcoded in `lightcone_utils.py`.
+- `--model_dir`: Path to a directory containing the trained models. The names of the trained models to be used for each redshift bin is hardcoded in `lightcone_utils.py`.
 - `--redshift_space`: If set, generate output in redshift space.
 - `redshift_min`, `--redshift_max`: Redshift range for the lightcone.
 - `dz`: Redshift bin width. Indicates dlogz if `--use_logz` is given.
@@ -196,9 +197,9 @@ Important options:
 Other options:
 - `--gpu_id`: GPU ID to use (default: 0).
 - `--seed`: Random seed for reproducibility (default: 12345).
-- `--param_dir`: Path to a directory containing the parameter file of max ids.
+- `--param_dir`: Path to a directory containing the file of maximum normalized SFR for each mass bin (default: None).
 - `--gen_both`: If set, generate both real and redshift space data.
-- `--redshift_min`, --redshift_max: Minimum and maximum redshift range for the mock data.
+- `--redshift_min`, `--redshift_max`: Minimum and maximum redshift range for the mock data.
 - `--logm_min`: Minimum log halo mass for selecting galaxies.
 - `--threshold`: Minimum SFR threshold for emission line generation.
 - `--mass_correction_factor`: Multiplier applied to halo mass before galaxy generation (default: 1.0). Useful if calibration is needed.
@@ -214,9 +215,9 @@ python create_mock.py --input_fname [input_fname] --model_dir [model_dir]
 ```
 
 Important options:
-- `--input_fname`: Path to the lightcone data. Pinocchio format is supported.
+- `--input_fname`: Path to the lightcone halo catalog. Pinocchio format is supported.
 - `--output_fname`: Output filename (HDF5 format).
-- `--model_dir`: Path to a directory containing the directories of trained models. The names of the directories to be used for each redshift bin is hardcoded in `lightcone_utils.py`.
+- `--model_dir`: Path to a directory containing the trained models. The names of the directories to be used for each redshift bin is hardcoded in `lightcone_utils.py`.
 - `--redshift_space`: If set, generate output in redshift space.
 - `--side_length`, `--angular_resolution`: Angular size and resolution (arcsec) of the simulated map.
 - `--fmin`,`--fmax`: Frequency range [GHz] for the mock cube.
@@ -225,7 +226,7 @@ Important options:
 Other options:
 - `--gpu_id`: GPU ID to use (default: 0).
 - `--seed`: Random seed for reproducibility (default: 12345).
-- `--param_dir`: Path to a directory containing the parameter file of max ids.
+- `--param_dir`: Path to a directory containing the file of maximum normalized SFR for each mass bin (default: None).
 - `--sigma`: Log-normal scatter [dex] added to the luminosity–SFR relation.
 - `--gen_both`: If set, generate both real and redshift space data.
 - `--redshift_min`, --redshift_max: Minimum and maximum redshift range for the mock data.
@@ -240,9 +241,9 @@ Other options:
 
 ## Notebooks
 
-- `plot_transformer.ipynb`: visualize training results
+- `plot_transformer.ipynb`: visualize training results 
 - `plot_data_cube.ipynb`: visualize created data cube
-- `plot_lightcone.ipynb`: visualize created light cone mock
+- `plot_lightcone.ipynb`: visualize created light cone mock 
 
 ## Other models
 

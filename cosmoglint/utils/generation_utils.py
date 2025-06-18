@@ -64,7 +64,7 @@ def create_mask(array, threshold):
 
 def generate_galaxy(args, logm, pos, vel):
     """
-    args: args.gpu_id, args.model_dir, args.threshold, args.prob_threshold, and argsmax_ids_file are used
+    args: args.gpu_id, args.model_dir, args.threshold, args.prob_threshold, and args.max_sfr_file are used
     logm: (num_halos, ), log mass of the halos
     pos: (num_halos, 3), positions of the halo centers
     vel: (num_halos, 3), velocities of the halo centers
@@ -96,10 +96,11 @@ def generate_galaxy(args, logm, pos, vel):
     logm = (logm - xmin[0]) / (xmax[0] - xmin[0])
     logm = torch.from_numpy(logm).float().to(device)
 
-    if args.max_ids_file is None:
+    if args.max_sfr_file is None:
         max_ids = None
     else:
-        max_ids = np.loadtxt(args.max_ids_file, dtype=int) 
+        max_ids = np.loadtxt(args.max_sfr_file)
+        max_ids = ( max_ids * opt.num_features_out ).astype(int)
         max_ids = torch.tensor(max_ids).to(device) # (num_features, )
     
     num_batch = (len(logm) + opt.batch_size - 1) // opt.batch_size

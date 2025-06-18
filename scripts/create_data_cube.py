@@ -55,7 +55,7 @@ def parse_args():
     ### Generative model parameters
     parser.add_argument("--model_dir", type=str, default=None, help="The directory of the model. If not given, use 7th column as intensity.")
     parser.add_argument("--prob_threshold", type=float, default=1e-5, help="Below this probability, the galaxy is not generated.")
-    parser.add_argument("--max_ids_file", type=str, default=None, help="File containing maximum IDs for SFR.")
+    parser.add_argument("--max_sfr_file", type=str, default=None, help="File containing maximum IDs for SFR.")
 
     return parser.parse_args()
 

@@ -27,7 +27,7 @@ do
 
     output_fname=${output_dir}/pinocchio.run${irun}.${side_length}sec_fmin${fmin}_fmax${fmax}_R${R}.h5
 
-    python3 create_mock.py --input_fname $input_fname --output_fname $output_fname --model_dir $model_dir --threshold $threshold --gpu_id $gpu_id --fmin $fmin --fmax $fmax --R $R --side_length $side_length --param_dir ../scripts/param_files
+    python3 create_mock.py --input_fname $input_fname --output_fname $output_fname --model_dir $model_dir --threshold $threshold --gpu_id $gpu_id --fmin $fmin --fmax $fmax --R $R --side_length $side_length --param_dir ../dataset/param_files
     
     irun=$(( irun + 1 ))
 done    

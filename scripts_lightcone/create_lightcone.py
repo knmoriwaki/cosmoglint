@@ -44,7 +44,7 @@ def parse_args():
 
     parser.add_argument("--redshift_min", type=float, default=0.0, help="Minimum redshift")
     parser.add_argument("--redshift_max", type=float, default=6.0, help="Maximum redshift")
-    parser.add_argument("--dz", type=float, default=0.01, help="Redshift bin size")
+    parser.add_argument("--dz", type=float, default=0.01, help="Redshift bin size. Not used if gen_catalog is set.")
     parser.add_argument("--use_logz", action="store_true", default=False, help="Use dlogz instead of dz for redshift binning")
 
     parser.add_argument("--logm_min", type=float, default=11.0, help="Minimum log mass")
@@ -57,7 +57,7 @@ def parse_args():
 
     ### Generate mock data with frequency bins if --gen_mock is set otherwise galaxy catalog with SFR > catalog_threshold is created
     parser.add_argument("--side_length", type=float, default=300.0, help="side length in arcsec")
-    parser.add_argument("--angular_resolution", type=float, default=30, help="angular resolution in arcsec")
+    parser.add_argument("--angular_resolution", type=float, default=30, help="angular resolution in arcsec. Not used if gen_catalog is set.")
     
     ### Generative model parameters
     parser.add_argument("--model_dir", type=str, default=None, help="The directory of the model. If not given, use 4th column as intensity.")

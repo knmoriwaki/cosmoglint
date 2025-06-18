@@ -189,7 +189,10 @@ def generate_galaxy(args, logm, pos, redshift):
     bin_edges = (redshifts_of_snapshots[:-1] + redshifts_of_snapshots[1:]) / 2.0
     bin_indices = np.digitize(redshift, bin_edges)  
 
-    max_ids_file_list = ["{}/max_ids_20_{:d}.txt".format(args.param_dir, snapshot_number) for snapshot_number in snapshot_dict]
+    if args.param_dir is None:
+        max_sfr_file_list = [ None for snapshot_number in snapshot_dict ]
+    else:
+        max_sfr_file_list = ["{}/max_nbin20_{:d}.txt".format(args.param_dir, snapshot_number) for snapshot_number in snapshot_dict]
 
     for i, snapshot_number in enumerate(snapshot_dict):
         suffix, redshift_of_snapshot = snapshot_dict[snapshot_number]
@@ -223,7 +226,8 @@ def generate_galaxy(args, logm, pos, redshift):
         ### generate galaxies
         print("# Generate galaxies (batch size: {:d})".format(opt.batch_size))
 
-        max_ids = np.loadtxt(max_ids_file_list[i], dtype=int)
+        max_ids = np.loadtxt(max_sfr_file_list[i])
+        max_ids = ( max_ids * opt.num_features_out ).astype(int) 
         max_ids = torch.from_numpy(max_ids).long().to(device)
 
         logm_now = (logm - xmin[0]) / (xmax[0] - xmin[0])
