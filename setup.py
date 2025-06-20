@@ -11,6 +11,7 @@ setup(
         "numpy",
         "tqdm",
         "h5py",
+        "nflows",
     ],
     python_requires=">=3.8"
 )
