@@ -9,20 +9,16 @@ This repository includes:
 - Scripts for training and mock catalog generation.
 - Example notebooks for result visualization.
 
-Trained models and generated data are available at: [Google Drive](https://drive.google.com/drive/folders/1IFje9tNRf4Dr3NufqzlDdGMFTEDpsm35?usp=share_link).
+Models trained with TNG300-1 at z = 0.5 - 6 and generated data are available at [Google Drive](https://drive.google.com/drive/folders/1IFje9tNRf4Dr3NufqzlDdGMFTEDpsm35?usp=share_link).
 
 
 ---
 
 ## Model
 
-Install from GitHub:
+## Installation
 
-```bash
-pip install git+https://github.com/knmoriwaki/cosmoglint.git
-```
-
-Install from local clone:
+Install package and from local clone:
 
 ```bash
 git clone https://github.com/knmoriwaki/cosmoglint.git
@@ -34,6 +30,12 @@ For developer (editable mode):
 
 ```bash
 pip install -e .
+```
+
+If you only need the `cosmoglint` package (e.g., to import it in your own code), you can install it directly:
+
+```bash
+pip install git+https://github.com/knmoriwaki/cosmoglint.git
 ```
 
 ---

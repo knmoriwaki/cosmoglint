@@ -32,7 +32,7 @@ def parse_args():
     parser.add_argument("--gpu_id", type=int, default=0, help="GPU ID to use")
 
     ### I/O parameters
-    parser.add_argument("--input_fname", type=str, default="./Pinocchio/output/pinocchio.r01000.plc.out", help="Input filename")
+    parser.add_argument("--input_fname", type=str, default=None, help="Input filename")
     parser.add_argument("--output_fname", type=str, default="test.h5", help="Output filename")
 
     parser.add_argument("--boxsize", type=float, default=100.0, help="Box size [Mpc/h]")
@@ -75,7 +75,10 @@ def create_data(args):
     if args.gen_both:
         args.redshift_space = True
 
-    if "pinocchio" in args.input_fname:
+    if args.input_fname is None:
+        ValueError("Input filename is not specified. Use --input_fname to specify the input file.")
+
+    elif "pinocchio" in args.input_fname:
         match = re.search(r'pinocchio\.([0-9]+\.[0-9]+)', args.input_fname)
         redshift = float(match.group(1))
             

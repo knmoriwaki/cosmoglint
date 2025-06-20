@@ -1,6 +1,10 @@
 # CosmoGLINT: Cosmological Generative model for Line INtensity mapping with Transformer
 
-Model to generate galaxy properties for a given halo mass.
+This repository includes:
+
+- cosmoglint, a package of Transformer-based models that generate galaxy properties from halo mass.
+- Scripts for training and mock catalog generation.
+- Example notebooks for result visualization.
 
 Models trained with TNG300-1 at z = 0.5 - 6 and generated data are available at [Google Drive](https://drive.google.com/drive/folders/1IFje9tNRf4Dr3NufqzlDdGMFTEDpsm35?usp=share_link).
 
@@ -10,19 +14,20 @@ For detailed usage and options, see [DOCUMENTATION](./DOCUMENTATION.md).
 
 ## Installation
 
-Install from GitHub:
-
-```bash
-pip install git+https://github.com/knmoriwaki/cosmoglint.git
-```
-
-Install from local clone:
+Install package and from local clone:
 
 ```bash
 git clone https://github.com/knmoriwaki/cosmoglint.git
 cd cosmoglint
 pip install .
 ```
+
+If you only need the `cosmoglint` package (e.g., to import it in your own code), you can install it directly:
+
+```bash
+pip install git+https://github.com/knmoriwaki/cosmoglint.git
+```
+
 
 Several libraries needs to be additionally installed to run the scripts and notebooks:
 ```bash
