@@ -68,3 +68,19 @@ Example Jupyter notebooks are available in the `notebooks/` directory:
 
 ## Citation
 
+If you use CosmoGLINT in your research, please cite [Moriwaki et al. 2025](https://arxiv.org/abs/2506.16843)
+
+```
+@ARTICLE{CosmoGLINT,
+  title = {CosmoGLINT: Cosmological Generative Model for Line Intensity Mapping with Transformer},
+  author = {{Moriwaki}, Kana and {Jun}, Rui Lan and {Osato}, Ken and {Yoshida}, Naoki},
+  journal = {arXiv preprints},
+  year = 2025,
+  month = jun,
+  eid = {arXiv:2506.16843},
+  doi = {10.48550/arXiv.2506.16843},
+  archivePrefix = {arXiv},
+  eprint = {2506.16843},
+  primaryClass = {astro-ph.CO}
+}
+```
