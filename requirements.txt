@@ -5,3 +5,4 @@ tqdm
 astropy
 scipy
 matplotlib
+ipykernel
