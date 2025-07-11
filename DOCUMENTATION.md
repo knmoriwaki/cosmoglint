@@ -174,20 +174,29 @@ Other options:
 
 ---
 
-### Create SFR density map / SFR catalog
+### Create SFR density map or SFR catalog
 
 One can also create a mock lightcone data. This requires models trained on multiple redshift.
 
 Example:
 ```bash
 cd scripts_lightcone
-python create_lightcone.py --input_fname [input_fname] --model_dir [model_dir]
+python create_lightcone.py --input_fname [input_fname] --model_dir [model_dir] --model_config_file [model_config_file]
+```
+
+Example of `model_config_file`:
+```json
+{
+  "33": ["transformer1_33_use_vel_ep40_bs512_w0.02", 2.002],
+  "21": ["transformer1_21_use_vel_ep60_bs512_w0.02", 4.008]
+}
 ```
 
 Important options:
 - `--input_fname`: Path to the lightcone halo catalog. Pinocchio format is supported.
 - `--output_fname`: Output filename (HDF5 format).
-- `--model_dir`: Path to a directory containing the trained models. The names of the trained models to be used for each redshift bin is hardcoded in `lightcone_utils.py`.
+- `--model_dir`: Path to a directory containing the trained models. 
+- `--model_config_file`: Path to a JSON file that contains the names of the trained models to be used for each redshift bin. The JSON file is a dictionary where each key is a stringified snapshot ID, and the value is a list containing the model directory relative to `model_dir` and the redshift.
 - `--redshift_space`: If set, generate output in redshift space.
 - `redshift_min`, `--redshift_max`: Redshift range for the lightcone.
 - `dz`: Redshift bin width. Indicates dlogz if `--use_logz` is given.
@@ -219,7 +228,8 @@ python create_mock.py --input_fname [input_fname] --model_dir [model_dir]
 Important options:
 - `--input_fname`: Path to the lightcone halo catalog. Pinocchio format is supported.
 - `--output_fname`: Output filename (HDF5 format).
-- `--model_dir`: Path to a directory containing the trained models. The names of the directories to be used for each redshift bin is hardcoded in `lightcone_utils.py`.
+- `--model_dir`: Path to a directory containing the trained models. 
+- `--model_config_file`: Path to a JSON file that contains the names of the trained models to be used for each redshift bin. The JSON file is a dictionary where each key is a stringified snapshot ID, and the value is a list containing the model directory relative to `model_dir` and the redshift.
 - `--redshift_space`: If set, generate output in redshift space.
 - `--side_length`, `--angular_resolution`: Angular size and resolution (arcsec) of the simulated map.
 - `--fmin`,`--fmax`: Frequency range [GHz] for the mock cube.
