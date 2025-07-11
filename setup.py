@@ -12,6 +12,7 @@ setup(
         "tqdm",
         "h5py",
         "nflows",
+        "astropy",
     ],
     python_requires=">=3.8"
 )

@@ -26,7 +26,7 @@ Jy = 1.0e-23        # jansky (erg/s/cm2/Hz)
 arcsec = 4.848136811094e-6 # [rad] ... arcmin / 60 //
 
 from line_model import calc_line_luminosity, line_dict
-from lightcone_utils import cMpc_to_arcsec, dcMpc_to_dz, z_to_log_lumi_dis, load_lightcone_data
+from cosmoglint.utils.lightcone_utils import cMpc_to_arcsec, dcMpc_to_dz, z_to_log_lumi_dis, load_lightcone_data, generate_galaxy_in_lightcone
 
 def parse_args():
 
@@ -90,7 +90,10 @@ def create_mock(args):
 
     logm += np.log10(args.mass_correction_factor)
 
-    if not args.redshift_space:
+    if args.redshift_space:
+        print("# Using redshift space")
+    else:
+        print("# Using real space")
         redshift_obs = copy.deepcopy(redshift_real)
 
     ### Mask out small halos
@@ -113,8 +116,7 @@ def create_mock(args):
         if "Transformer_NF" in args.model_dir:
             ValueError("Transformer_NF model is not supported yet. Please use the old model.")
         else:
-            from lightcone_utils import generate_galaxy
-            generated, pos_central, redshift_real_central, flag_central = generate_galaxy(args, logm, pos, redshift_real)
+            generated, pos_central, redshift_real_central, flag_central = generate_galaxy_in_lightcone(args, logm, pos, redshift_real)
 
         log_sfr = np.log10( generated[:,0] )
         distance = generated[:,1]

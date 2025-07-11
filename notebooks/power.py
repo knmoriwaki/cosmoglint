@@ -276,3 +276,93 @@ def compute_r(image1, image2, boxlength=1., nbins=20, log_bins=True):
     P2, _, var2 = compute_power(image2, boxlength=boxlength, nbins=nbins, log_bins=log_bins)
     return Px / np.sqrt( P1 * P2 ), k
 
+
+from astropy.cosmology import FlatLambdaCDM
+cosmo_default = FlatLambdaCDM(H0=67.74, Om0=0.3089)
+
+def calc_lightcone_noise_power(sigma_noise_Jy_sr, freq, intensity, side_length=3600, line_name="CO(1-0)", with_hlittle=True, cosmo=cosmo_default):
+       
+    redshifts = line_dict[line_name][0] / GHz / freq - 1
+    redshift_mean = np.mean(redshifts)
+    nu_rest = line_dict[line_name][0] / GHz
+
+    Lx = arcsec_to_cMpc(side_length, redshift_mean, cosmo=cosmo, l_with_hlittle=with_hlittle) # [cMpc/h]
+    Ly = arcsec_to_cMpc(side_length, redshift_mean, cosmo=cosmo, l_with_hlittle=with_hlittle) # [cMpc/h]
+    Lz = freq_to_comdis(freq[0], nu_rest, cosmo=cosmo, l_with_hlittle=with_hlittle) - freq_to_comdis(freq[-1], nu_rest, cosmo=cosmo, l_with_hlittle=with_hlittle) 
+
+    dx = Lx / intensity.shape[0]
+    dy = Ly / intensity.shape[1]
+    dz = Lz / intensity.shape[2]
+    
+    dL = np.array([dx, dy, dz])
+    dV = np.prod(dL) 
+
+    P_noise = sigma_noise_Jy_sr**2 * dV
+
+    return P_noise
+
+
+def calc_lightcone_power(freq_obs, intensity, intensity2=None, side_length=3600, line_name="CO(1-0)", dlogk=0.2, with_hlittle=True, logkpara_min=-10, logkperp_min=-10, sigma_noise=0, sigma_noise2=0, cosmo=cosmo_default): 
+    """
+    input:
+        freq: (N,) frequency [GHz]
+        intensity: (Nx, Ny, Nf) intensity [arbitrary unit]
+        side_length: side length [arcsec]
+        line_name: line name for which the distance is calculated
+        dlogk: bin width for logk
+        with_hlittle: if True, multiply h
+        logkpara_min: minimum value of logkpara
+        logkperp_min: minimum value of logkperp
+    output:
+        k: (Nk,) wavenumber [h/cMpc^-1]
+        power1d: (Nk,) power spectrum [input unit^2 * (cMpc/h)^3]
+    """
+    
+    redshifts = line_dict[line_name][0] / GHz / freq_obs - 1
+    redshift_mean = np.mean(redshifts)
+    nu_rest = line_dict[line_name][0] / GHz
+
+    print("Use {} rest-frame frequency".format(line_name))
+    print("redshift: {:.2f} - {:.2f} (mean: {:.2f})".format(redshifts[-1],redshifts[0],redshift_mean))
+    
+    Lx = arcsec_to_cMpc(side_length, redshift_mean, cosmo=cosmo, l_with_hlittle=with_hlittle) # [cMpc]
+    Ly = arcsec_to_cMpc(side_length, redshift_mean, cosmo=cosmo, l_with_hlittle=with_hlittle) # [cMpc]
+    Lz = freq_to_comdis(freq_obs[0], nu_rest) - freq_to_comdis(freq_obs[-1], nu_rest) # [cMpc]
+
+    ## Fourier transform
+    L = np.array([Lx, Ly, Lz])
+    dL = np.array([Lx / intensity.shape[0], Ly / intensity.shape[1], Lz / intensity.shape[2]])
+
+    V = np.prod(L) 
+    dV = np.prod(dL) # [cMpc/h]^3
+    
+    ft, freq = my_fft(intensity, L=L)
+    if intensity2 is None:
+        ft2 = ft
+    else:
+        ft2, freq2 = my_fft(intensity2, L=L)
+
+    power_spectrum = np.real(ft* np.conj(ft2)) / V
+    kx, ky, kz = np.meshgrid(freq[0], freq[1], freq[2], indexing='ij')
+
+    ## noise power spectrum
+    power_noise = sigma_noise**2 * dV
+
+    ## compute angular-averaged power spectrum
+    logk = np.log10(np.sqrt(kx**2 + ky**2 + kz**2))
+    logkpara = np.log10(np.abs(kz))
+    logkperp = np.log10(np.sqrt(kx**2 + ky**2))
+    
+    logk_bins = np.arange(-1.4, 1.3, dlogk)#dk=k*dlogk
+    
+    power1d = np.zeros(len(logk_bins) - 1)
+    power1d_err = np.zeros(len(logk_bins) - 1)
+    for i in range(len(logk_bins) - 1):
+        mask = (logk >= logk_bins[i]) & (logk < logk_bins[i+1]) & (logkpara > logkpara_min) & (logkperp > logkperp_min)
+        Nk = mask.sum()
+
+        if np.any(mask):
+            power1d[i] = np.mean(power_spectrum[mask])
+            power1d_err[i] = (power1d[i] + power_noise) / np.sqrt(Nk)
+
+    return 10**(0.5*(logk_bins[1:]+logk_bins[:-1])), power1d, power1d_err

@@ -1,0 +1,18 @@
+{
+    "67": ["transformer1_67_use_vel_ep40_bs512_w0.02", 0.503],
+    "55": ["transformer1_55_use_vel_ep40_bs512_w0.02", 0.817],
+    "49": ["transformer1_49_use_vel_ep40_bs512_w0.02", 1.036],
+    "43": ["transformer1_43_use_vel_ep40_bs512_w0.02", 1.302],
+    "40": ["transformer1_40_use_vel_ep60_bs512_w0.02", 1.495],
+    "35": ["transformer1_35_use_vel_ep60_bs512_w0.02", 1.823],
+    "33": ["transformer1_33_use_vel_ep40_bs512_w0.02", 2.002],
+    "29": ["transformer1_29_use_vel_ep60_bs512_w0.02", 2.444],
+    "25": ["transformer1_25_use_vel_ep60_bs512_w0.02", 3.008],
+    "23": ["transformer1_23_use_vel_ep60_bs512_w0.02", 3.490],
+    "21": ["transformer1_21_use_vel_ep60_bs512_w0.02", 4.008],
+    "19": ["transformer1_19_use_vel_ep60_bs512_w0.02", 4.428],
+    "17": ["transformer1_17_use_vel_ep80_bs512_w0.02", 4.996],
+    "15": ["transformer1_15_use_vel_ep80_bs512_w0.02", 5.530],
+    "13": ["transformer1_13_use_vel_ep80_bs512_w0.02", 6.011]
+}
+
