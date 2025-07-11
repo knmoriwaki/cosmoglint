@@ -145,9 +145,11 @@ def create_mock(args):
             vz_gal = - relative_vel_rad * _cos_theta + relative_vel_tan * _sin_theta * np.cos(alpha)
 
             H = cosmo.H(redshift_real).to(u.km/u.s/u.Mpc).value #[km/s/Mpc]
-            hlittle = cosmo.H(0).to(u.km/u.s/u.Mpc).value / 100.0 
+            hlittle = cosmo.H(0).to(u.km/u.s/u.Mpc).value / 100.0
             scale_factor = 1 / (1 + redshift_real)
-            pos_galaxies[:,2] += vz_gal / scale_factor / H * hlittle
+            dcMpc = vz_gal / scale_factor / H * hlittle # [Mpc/h]
+            distance_z = dcMpc_to_dz(dcMpc, redshift_real, cosmo=cosmo, l_with_hlittle=True)
+            pos_galaxies[:,2] += distance_z
 
         if args.gen_catalog:
 

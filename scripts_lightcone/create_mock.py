@@ -66,6 +66,7 @@ def parse_args():
 
     ### Generative model parameters
     parser.add_argument("--model_dir", type=str, default=None, help="The directory of the model. If not given, use 4th column as intensity.")
+    parser.add_argument("--model_config_file", type=str, default="model_config.json", help="The configuration file for the model. ")
     parser.add_argument("--param_dir", type=str, default=None, help="The directory of the parameter files")
 
     return parser.parse_args()
@@ -152,7 +153,9 @@ def create_mock(args):
             H = cosmo.H(redshift_real).to(u.km/u.s/u.Mpc).value #[km/s/Mpc]
             hlittle = cosmo.H(0).to(u.km/u.s/u.Mpc).value / 100.0 
             scale_factor = 1 / (1 + redshift_real)
-            pos_galaxies[:,2] += vz_gal / scale_factor / H * hlittle
+            dcMpc = vz_gal / scale_factor / H * hlittle # [Mpc/h]
+            distance_z = dcMpc_to_dz(dcMpc, redshift_real, cosmo=cosmo, l_with_hlittle=True)
+            pos_galaxies[:,2] += distance_z
 
         if args.gen_catalog:
             NotImplementedError("Generating galaxy catalog is not implemented yet.")
