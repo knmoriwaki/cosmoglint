@@ -25,7 +25,7 @@ do
     irun_id=$(printf "%05d" $irun)
     input_fname=../dataset/Pinocchio/my_lightcone/output/pinocchio.r${irun_id}.plc.out
 
-    output_fname=${output_dir}/pinocchio.run${irun}.${side_length}sec_fmin${fmin}_fmax${fmax}_R${R}.h5
+    output_fname=${output_dir}/pinocchio.run${irun}.lightcone_intensity_map.${side_length}sec_fmin${fmin}_fmax${fmax}_R${R}.h5
 
     python3 create_mock.py --input_fname $input_fname --output_fname $output_fname --model_dir $model_dir --threshold $threshold --gpu_id $gpu_id --fmin $fmin --fmax $fmax --R $R --side_length $side_length --param_dir ../dataset/param_files
     

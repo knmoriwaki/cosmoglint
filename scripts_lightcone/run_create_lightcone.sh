@@ -20,14 +20,12 @@ irun=1
 irun_id=$(printf "%05d" $irun)
 input_fname=../dataset/Pinocchio/my_lightcone/output/pinocchio.r${irun_id}.plc.out
 
-output_fname=${output_dir}/pinocchio.run${irun}.${side_length}sec_zmin${zmin}_zmax${zmax}_dz${dz}.h5
+output_fname=${output_dir}/pinocchio.run${irun}.lightcone_sfrd_map.${side_length}sec_zmin${zmin}_zmax${zmax}_dz${dz}.h5
 
 #python3 create_lightcone.py --input_fname $input_fname --output_fname $output_fname --model_dir $model_dir --threshold $threshold --gpu_id $gpu_id --redshift_min $zmin --redshift_max $zmax --dz $dz --use_logz --side_length $side_length --angular_resolution $angular_resolution --param_dir ../dataset/param_files
 
 
-output_fname=${output_dir}/pinocchio.catalog.run${irun}.${side_length}sec_zmin${zmin}_zmax${zmax}.h5
+catalog_threshold=1e-3
+output_fname=${output_dir}/pinocchio.run${irun}.lightcone_catalog.${side_length}sec_zmin${zmin}_zmax${zmax}_sfrmin${catalog_threshold}.h5
 
-python3 create_lightcone.py --input_fname $input_fname --output_fname $output_fname --model_dir $model_dir --threshold $threshold --gpu_id $gpu_id --redshift_min $zmin --redshift_max $zmax --side_length $side_length --param_dir ../dataset/param_files --gen_catalog
-
-   
-    
+python3 create_lightcone.py --input_fname $input_fname --output_fname $output_fname --model_dir $model_dir --threshold $threshold --gpu_id $gpu_id --redshift_min $zmin --redshift_max $zmax --side_length $side_length --param_dir ../dataset/param_files --gen_catalog --catalog_threshold $catalog_threshold
