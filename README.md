@@ -47,7 +47,7 @@ Options:
 - `--use_dist`: If set, the distance to halo is predicted
 - `--use_vel`: If set, relative velocity to halo is predicted
 
-## Create mock data
+## Create mock data cube
 
 Example:
 ```bash
@@ -58,12 +58,32 @@ Options:
 - `--input_fname`: Path to the halo catalog. Text file that contains the logarithmic total halo mass [Msun] (1st column), comving positions [Mpc/h] (2nd to 4th columns), and velocities [km/s] (5th to 8th columns) and catalog in [Pinocchio](https://github.com/pigimonaco/Pinocchio) format are supported.
 - `--model_dir`: Path to a directory containing the trained model (`model.pth` and `args.json`). If not set, column 7 of the input file is used as intensity.
 
+## Create lightcone
+
+Example:
+```bash
+python create_lightcone.py --input_fname [input_fname] --model_dir [model_dir] --model_config_file [model_config_file]
+```
+
+- `--input_fname`: Path to the halo catalog. Text file that contains the logarithmic total halo mass [Msun] (1st column), comving positions [Mpc/h] (2nd to 4th columns), and velocities [km/s] (5th to 8th columns) and catalog in [Pinocchio](https://github.com/pigimonaco/Pinocchio) format are supported.
+- `--model_dir`: Path to a directory containing the trained model (`model.pth` and `args.json`). If not set, column 7 of the input file is used as intensity.
+- `--model_config_file`: Path to a JSON file containing a dictionary where each key is a stringified snapshot ID, and the value is a list containing the model directory relative to `model_dir` and the redshift.
+
+Example of `model_config_file`:
+```json
+{
+  "33": ["transformer1_33_use_vel_ep40_bs512_w0.02", 2.002],
+  "21": ["transformer1_21_use_vel_ep60_bs512_w0.02", 4.008]
+}
+```
+
 ## Visualization
 
 Example Jupyter notebooks are available in the `notebooks/` directory:
 
 - `plot_transformer.ipynb`: visualize training results
 - `plot_data_cube.ipynb`: visualize created data cube
+- `plot_lightcone.ipynb`: visualize lightcone data
 
 
 ## Citation
