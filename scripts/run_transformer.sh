@@ -5,7 +5,7 @@ gpu_id=0
 for snapshot_number in 19 #33 49 67 # 13 15 17 21 23 25 29 35 40 43 55 
 do
     data_path="../dataset/TNG300-1/TNG300-1_${snapshot_number}.h5"
-    norm_param_file="./param_files/norm_params_${snapshot_number}.txt"
+    norm_param_file="../dataset/param_files/norm_params_${snapshot_number}.txt"
 
     num_features_out=100
     batch_size=512

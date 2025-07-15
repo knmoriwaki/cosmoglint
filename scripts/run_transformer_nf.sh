@@ -19,7 +19,7 @@ num_flows=8
 
 lr=1e-4
 
-norm_param_file=param_files/norm_params_${snapshot_number}.txt
+norm_param_file=../dataset/param_files/norm_params_${snapshot_number}.txt
 
 output_dir=./runs/output_transformer_nf/${model_name}_${snapshot_number}_${base_dist}_nc${num_context}_nl${num_layers}_nf${num_flows}_ep${num_epochs}_lr${lr}_use_vel
 mkdir -p $output_dir/source

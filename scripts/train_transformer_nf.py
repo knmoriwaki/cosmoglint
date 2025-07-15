@@ -11,8 +11,8 @@ import torch
 from torch.utils.data import DataLoader, WeightedRandomSampler
 from torch.utils.data import random_split
 
-from cosmoglint.utils.training_utils import MyDataset, my_load_model, my_save_model
-from cosmoglint.model.transformer_nf import transformer_nf_model, my_stop_predictor, calculate_transformer_nf_loss
+from cosmoglint.utils import MyDataset, my_load_model, my_save_model
+from cosmoglint.model import transformer_nf_model, my_stop_predictor, calculate_transformer_nf_loss
 
 def parse_args():
 

@@ -143,14 +143,12 @@ def create_mock(args):
             relative_vel_rad[flag_central] = 0 # Set vr to 0 for central galaxies
             alpha = np.random.uniform(0, 2 * np.pi, size=num_gal)
             vz_gal = - relative_vel_rad * _cos_theta + relative_vel_tan * _sin_theta * np.cos(alpha)
+            
+            beta = vz_gal / (cspeed * 100) # [(km/s) / (km/s)]
 
-            H = cosmo.H(redshift_real).to(u.km/u.s/u.Mpc).value #[km/s/Mpc]
-            hlittle = cosmo.H(0).to(u.km/u.s/u.Mpc).value / 100.0
-            scale_factor = 1 / (1 + redshift_real)
-            dcMpc = vz_gal / scale_factor / H * hlittle # [Mpc/h]
-            distance_z = dcMpc_to_dz(dcMpc, redshift_real, cosmo=cosmo, l_with_hlittle=True)
-            pos_galaxies[:,2] += distance_z
-
+            redshift_rest = pos_galaxies[:,2]
+            pos_galaxies[:,2] = ( 1. + redshift_rest ) * np.sqrt( (1. + beta) / (1. - beta) ) - 1.0
+            
         if args.gen_catalog:
 
             mask = (sfr > args.catalog_threshold)

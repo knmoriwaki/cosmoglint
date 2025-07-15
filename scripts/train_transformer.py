@@ -13,8 +13,8 @@ from torch.utils.data import random_split
 from torch.distributions import Beta
 import torch.nn.functional as F
 
-from cosmoglint.utils.training_utils import MyDataset
-from cosmoglint.model.transformer import transformer_model
+from cosmoglint.utils import MyDataset
+from cosmoglint.model import transformer_model
 
 def parse_args():
 
