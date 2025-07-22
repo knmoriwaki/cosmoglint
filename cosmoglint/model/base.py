@@ -35,9 +35,12 @@ class TransformerBase(nn.Module):
         buffer = max(int(buffer_percent * self.num_features_out), 1)
         # used for cutoff and max_ids
         # buffer = 1 indicates the bins just above the max_ids are avoided.
+        if max_ids is not None:
+            max_ids = max_ids.to(context.device) + buffer # (nbins, ) 
 
         if len(context.shape) == 1:
             context = context.unsqueeze(-1)
+
         generated = torch.zeros(batch_size, self.max_length, self.num_features_in).to(context.device) # (batch, max_length, num_features_in)
         mask_all_batch = torch.ones(batch_size, dtype=torch.bool).to(context.device)
                     
@@ -48,7 +51,7 @@ class TransformerBase(nn.Module):
             else:
                 x = self(context, generated[:, :t]) # generated[:, :t]: (batch, t, num_features_in)
                 # (batch, t+1, num_faetures_in, num_features_out)
-
+                
                 x_last = x[:, -1, :, :] 
                 # last taken (batch, num_features_in, num_features_out)
             
@@ -60,25 +63,27 @@ class TransformerBase(nn.Module):
                         mask = (x_last[:, iparam, 1:] >= prob_threshold).any(axis=1) # (batch,)
                         x_last[:, iparam, 0] = self._set_to_zero(x_last[:,iparam,0], mask) 
 
-                if t > 1 and cutoff: 
-                    # Set the probability for SFR bins above the previous SFR bin to zero
-                    # This is applied only from the second satellite galaxy
-                    previous_token_bin = (generated[:, t-1, 0] * self.num_features_out).long() + buffer
-                    previous_token_bin = previous_token_bin.contiguous().view(-1, 1) # (batch, 1)
-                    bin_indices = torch.arange(self.num_features_out, device=context.device).view(1, -1) # (1, num_features_out)
-                    mask = (bin_indices > previous_token_bin) # (batch, num_features_out)
-                    mask = mask & (x_last[:, 0, :] >= prob_threshold) # (batch, num_features_out)
-                    x_last[:, 0, :] = self._set_to_zero(x_last[:, 0, :], mask) # set the probability to zero for bins above the previous bin
+                if cutoff:
+                    if t > 1: 
+                        # Set the probability for SFR bins above the previous SFR bin to zero
+                        # This is applied only from the second satellite galaxy
+                        previous_token_bin = (generated[:, t-1, 0] * self.num_features_out).long() + buffer
+                        previous_token_bin = previous_token_bin.contiguous().view(-1, 1) # (batch, 1)
+                        bin_indices = torch.arange(self.num_features_out, device=context.device).view(1, -1) # (1, num_features_out)
+                        mask = (bin_indices > previous_token_bin) # (batch, num_features_out)
+                        mask = mask & (x_last[:, 0, :] >= prob_threshold) # (batch, num_features_out)
+                        x_last[:, 0, :] = self._set_to_zero(x_last[:, 0, :], mask) # set the probability to zero for bins above the previous bin
 
-                if max_ids is not None:
-                    nbins = len(max_ids)
-                    max_ids = max_ids.to(context.device) + buffer # (nbins, ) 
-                    context_bins = torch.linspace(0, 1, nbins, device=context.device) # (nbins, )
-                    context_bin_indices = torch.bucketize(context[:, 0], context_bins) - 1 # (batch, )
-                    bin_indices = torch.arange(self.num_features_out, device=context.device) # (num_features_out, )
-                    mask = (bin_indices.unsqueeze(0) > max_ids[context_bin_indices].unsqueeze(1)) # (batch, num_features_out)
-                    x_last[:, 0, :] = self._set_to_zero(x_last[:, 0, :], mask)
-
+                    elif max_ids is not None:
+                        # Set the probability for SFR bins above the maximum SFR bin to zero
+                        # This is applied only for the first satellite galaxy
+                        # For the other galaxies, the previous token bin is used
+                        nbins = len(max_ids)
+                        context_bins = torch.linspace(0, 1, nbins, device=context.device) # (nbins, )
+                        context_bin_indices = torch.bucketize(context[:, 0], context_bins) - 1 # (batch, )
+                        bin_indices = torch.arange(self.num_features_out, device=context.device) # (num_features_out, )
+                        mask = (bin_indices.unsqueeze(0) > max_ids[context_bin_indices].unsqueeze(1)) # (batch, num_features_out)
+                        x_last[:, 0, :] = self._set_to_zero(x_last[:, 0, :], mask)
 
                 x_last = self._set_to_zero(x_last, x_last < prob_threshold) # set the probability to zero if less than prob_threshold
 
