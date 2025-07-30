@@ -17,6 +17,35 @@ def my_load_model(model, fname):
     model.load_state_dict(torch.load(fname))
     print(f"# Model loaded from {fname}")
 
+def save_catalog_data(pos_list, value, args, output_fname):
+    if not isinstance(pos_list, list):
+        pos_list = [pos_list]
+
+    with open(output_fname, 'w') as f:
+        for i, v in enumerate(value):
+            f.write(f"{pos_list[0][i, 0]} {pos_list[0][i, 1]} ")
+            for pos in pos_list:
+                f.write(f"{pos[i, 2]} ")
+
+            f.write(f"{v}\n")
+
+    print(f"# Catalog saved to {output_fname}")
+
+def save_intensity_data(intensity, args, output_fname):
+    args_dict = vars(args)
+    args_dict = {k: (v if v is not None else "None") for k, v in args_dict.items()}
+
+    if not isinstance(intensity, list):
+        intensity = [intensity]
+    
+    with h5py.File(output_fname, 'w') as f:
+        for i, d in enumerate(intensity):
+            f.create_dataset(f'intensity{i}', data=d)    
+        for key, value in args_dict.items():
+            f.attrs[key] = value
+    print(f"# Data cube saved as {output_fname}")
+
+
 def load_halo_data(file_path, max_length=10, norm_params=None, ndata=None, use_dist=False, use_vel=False, sort=True):
     if norm_params is None:
         xmin, xmax = np.zeros(5), np.ones(5)
@@ -135,3 +164,85 @@ class MyDataset(Dataset):
     def __getitem__(self, idx):
         return self.x[idx], self.y_padded[idx], self.mask[idx]
     
+def load_lightcone_data(input_fname, cosmo):
+    print(f"# Load {input_fname}")
+
+    if "pinocchio" in input_fname: 
+        if "old_version" in input_fname:
+            M, theta, phi, _, redshift_obs, redshift_real = load_old_plc(input_fname)
+            logm = np.log10(M)
+        else:
+            import cosmoglint.utils.ReadPinocchio5 as rp
+            myplc = rp.plc(input_fname)
+            
+            logm = np.log10( myplc.data["Mass"] )
+            theta = myplc.data["theta"] # [arcsec]
+            phi = myplc.data["phi"]
+
+            redshift_obs = myplc.data["obsz"]
+            redshift_real = myplc.data["truez"]
+
+        import astropy.units as u
+        hlittle = cosmo.H(0).to(u.km/u.s/u.Mpc).value / 100.0 
+        logm -= np.log10(hlittle) # [Msun]
+
+        theta = ( 90. - theta ) * 3600 # [arcsec]
+        pos_x = theta * np.cos( phi * np.pi / 180. ) # [arcsec] 
+        pos_y = theta * np.sin( phi * np.pi / 180. ) # [arcsec]
+
+        theta_max = np.max(theta)
+        pos_x += theta_max / 1.5
+        pos_y += theta_max / 1.5
+        
+        print("# Minimum log mass in catalog: {:.5f}".format(np.min(logm)))
+        print("# Maximum pos_x: {:.3f} arcsec".format(np.max(pos_x)))
+        print("# Maximum pos_y: {:.3f} arcsec".format(np.max(pos_y)))
+        print("# Redshift: {:.3f} - {:.3f}".format(np.min(redshift_real), np.max(redshift_real)))
+        print("# Number of halos: {}".format(len(logm)))
+
+    else:
+        raise ValueError("Unknown input file format")
+    
+    return logm, pos_x, pos_y, redshift_obs, redshift_real
+
+
+def load_old_plc(filename):
+    import struct
+
+    plc_struct_format = "<Q d ddd ddd ddddd"  # Q=uint64, d=double, little-endian
+    plc_size = struct.calcsize(plc_struct_format)
+
+    M_list = []
+    th_list = []
+    ph_list = []
+    vl_list = []
+    zo_list = []
+    z_list = []
+    with open(filename, "rb") as f:
+        while True:
+            dummy_bytes = f.read(4)
+            if not dummy_bytes:
+                break  # EOF
+            dummy = struct.unpack("<i", dummy_bytes)[0]
+
+            plc_bytes = f.read(dummy)
+            if len(plc_bytes) != dummy:
+                break  # 不完全な読み込み
+
+            data = struct.unpack(plc_struct_format, plc_bytes)
+            (
+                id, z, x1, x2, x3, v1, v2, v3,
+                M, th, ph, vl, zo
+            ) = data
+
+            dummy2_bytes = f.read(4)
+            dummy2 = struct.unpack("<i", dummy2_bytes)[0]
+
+            M_list.append(M)
+            th_list.append(th)
+            ph_list.append(ph)
+            vl_list.append(vl)
+            zo_list.append(zo)
+            z_list.append(z)
+    
+    return np.array(M_list), np.array(th_list), np.array(ph_list), np.array(vl_list), np.array(zo_list), np.array(z_list)

@@ -19,13 +19,8 @@ from astropy.cosmology import FlatLambdaCDM
 cosmo = FlatLambdaCDM(H0=67.74, Om0=0.3089)
 import astropy.units as u
 
-cspeed = 3e10 # [cm/s]
-micron = 1e-4 # [cm]
-GHz = 1e9
-Jy = 1.0e-23        # jansky (erg/s/cm2/Hz)
-arcsec = 4.848136811094e-6 # [rad] ... arcmin / 60 //
-
-from cosmoglint.utils.lightcone_utils import cMpc_to_arcsec, dcMpc_to_dz, load_lightcone_data, generate_galaxy_in_lightcone
+from cosmoglint.utils.generation_utils import populate_galaxies_in_lightcone
+from cosmoglint.utils.io_utils import load_lightcone_data
 
 def parse_args():
 
@@ -74,9 +69,10 @@ def create_mock(args):
     np.random.seed(args.seed)
 
     print("# redshift: {:.4f} - {:.4f} [GHz]".format(args.redshift_min, args.redshift_max))
-    print("# dz: {:.4f}".format(args.dz))
     print("# area : {:.4f} arcsec x {:.4f} arcsec".format(args.side_length, args.side_length))
-    print("# angular resolution : {:.4f} arcsec".format(args.angular_resolution))
+    if not args.gen_catalog:
+        print("# dz: {:.4f}".format(args.dz))
+        print("# angular resolution : {:.4f} arcsec".format(args.angular_resolution))
 
     if args.gen_both:
         NotImplementedError("Generating both real and redshift space data is not implemented yet.")
@@ -112,43 +108,8 @@ def create_mock(args):
         if "Transformer_NF" in args.model_dir:
             ValueError("Transformer_NF model is not supported yet. Please use a different model.")
         else:
-            generated, pos_central, redshift_real_central, flag_central = generate_galaxy_in_lightcone(args, logm, pos, redshift_real)
+            sfr, pos_galaxies, redshift_real = populate_galaxies_in_lightcone(args, logm, pos, redshift_real, cosmo=cosmo)
 
-        sfr = generated[:,0]
-        distance = generated[:,1]
-
-        num_gal = len(sfr)
-
-        redshift_real = redshift_real_central
-
-        ### Determine positions of galaxies
-        print("# Generate positions of galaxies")
-        _phi = np.random.uniform(0, 2 * np.pi, size=num_gal)
-        _cos_theta = np.random.uniform(-1, 1, size=num_gal)
-        _sin_theta = np.sqrt(1 - _cos_theta ** 2)
-        
-        # Convert Mpc to deg
-        distance_arcsec = cMpc_to_arcsec(distance, redshift_real, cosmo=cosmo, l_with_hlittle=True)
-        distance_z = dcMpc_to_dz(distance, redshift_real, cosmo=cosmo, l_with_hlittle=True)
-
-        pos_galaxies = pos_central
-        pos_galaxies[:,0] += distance_arcsec * _sin_theta * np.cos(_phi)
-        pos_galaxies[:,1] += distance_arcsec * _sin_theta * np.sin(_phi)
-        pos_galaxies[:,2] += distance_z * _cos_theta
-        
-        if args.redshift_space:
-
-            relative_vel_rad = generated[:,2]
-            relative_vel_tan = generated[:,3]
-            relative_vel_rad[flag_central] = 0 # Set vr to 0 for central galaxies
-            alpha = np.random.uniform(0, 2 * np.pi, size=num_gal)
-            vz_gal = - relative_vel_rad * _cos_theta + relative_vel_tan * _sin_theta * np.cos(alpha)
-            
-            beta = vz_gal / (cspeed * 100) # [(km/s) / (km/s)]
-
-            redshift_rest = pos_galaxies[:,2]
-            pos_galaxies[:,2] = ( 1. + redshift_rest ) * np.sqrt( (1. + beta) / (1. - beta) ) - 1.0
-            
         if args.gen_catalog:
 
             mask = (sfr > args.catalog_threshold)

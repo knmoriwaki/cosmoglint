@@ -12,34 +12,7 @@ import numpy as np
 
 import torch
 
-def save_catalog_data(pos_list, value, args, output_fname):
-    if not isinstance(pos_list, list):
-        pos_list = [pos_list]
-
-    with open(output_fname, 'w') as f:
-        for i, v in enumerate(value):
-            f.write(f"{pos_list[0][i, 0]} {pos_list[0][i, 1]} ")
-            for pos in pos_list:
-                f.write(f"{pos[i, 2]} ")
-
-            f.write(f"{v}\n")
-
-    print(f"# Catalog saved to {output_fname}")
-
-def save_intensity_data(intensity, args, output_fname):
-    args_dict = vars(args)
-    args_dict = {k: (v if v is not None else "None") for k, v in args_dict.items()}
-
-    if not isinstance(intensity, list):
-        intensity = [intensity]
-    
-    with h5py.File(output_fname, 'w') as f:
-        for i, d in enumerate(intensity):
-            f.create_dataset(f'intensity{i}', data=d)    
-        for key, value in args_dict.items():
-            f.attrs[key] = value
-    print(f"# Data cube saved as {output_fname}")
-
+cspeed = 3e10  # [cm/s]
 
 def create_mask(array, threshold): 
     """
@@ -62,12 +35,10 @@ def create_mask(array, threshold):
 
     return mask
 
-def generate_galaxy(args, logm, pos, vel):
+def generate_galaxy(args, logm, verbose=True):
     """
     args: args.gpu_id, args.model_dir, args.threshold, args.prob_threshold, and args.max_sfr_file are used
     logm: (num_halos, ), log mass of the halos
-    pos: (num_halos, 3), positions of the halo centers
-    vel: (num_halos, 3), velocities of the halo centers
     """
 
     print("# Use Transformer to generate SFR")
@@ -78,8 +49,7 @@ def generate_galaxy(args, logm, pos, vel):
     ### load Transformer
     with open("{}/args.json".format(args.model_dir), "r") as f:
         opt = json.load(f, object_hook=lambda d: argparse.Namespace(**d))
-    print("opt: ", opt)
-
+    
     norm_params = np.array(opt.norm_params)
     xmin = norm_params[:,0]
     xmax = norm_params[:,1]
@@ -89,7 +59,10 @@ def generate_galaxy(args, logm, pos, vel):
 
     model.load_state_dict(torch.load("{}/model.pth".format(args.model_dir)))
     model.eval()
-    print(model)
+    
+    if verbose:
+        print("opt: ", opt)
+        print(model)
 
     ### generate galaxies
     print("# Generate galaxies (batch size: {:d})".format(opt.batch_size))
@@ -114,51 +87,26 @@ def generate_galaxy(args, logm, pos, vel):
         generated.append(generated_batch.cpu().detach().numpy())
     generated = np.concatenate(generated, axis=0) # (num_halos, seq_length, num_features)
 
-    ### Select valid galaxies
-    print("# Select valid galaxies")
-
+    # De-normalize
+    for i in range(generated.shape[-1]):
+        generated[..., i] = generated[..., i] * (xmax[1+i] - xmin[1+i]) + xmin[1+i]    
+        if i == 2:
+            generated[...,i] = np.sign( generated[...,i] ) * (10 ** np.abs( generated[...,i] ) - 1 )
+        else:
+            generated[...,i] = 10 ** generated[...,i]
+    
     # Set mask for selection
-    batch, seq_length, num_features = generated.shape
-
-    generated = generated * (xmax[1:1+num_features] - xmin[1:1+num_features]) + xmin[1:1+num_features]
-
     sfr = generated[:,:,0]
-    sfr = 10 ** sfr # (num_halos, seq_length)
     mask = create_mask(sfr, args.threshold) # (num_halos, seq_length)
 
-    # Define flag_central
-    flag_central = np.zeros_like(sfr, dtype=bool)
-    flag_central[:, 0] = True
-
-    # Flatten the arrays
-    mask = mask.reshape(-1) # (num_halos * seq_length, ) 
-    flag_central = flag_central.reshape(-1)
-    pos_central = np.repeat(pos[:,None,:], seq_length, axis=1).reshape(-1, 3) # (num_halos * seq_length, 3)
-    vel_central = np.repeat(vel[:,None,:], seq_length, axis=1).reshape(-1, 3) # (num_halos * seq_length, 3)
-    generated = generated.reshape(-1, num_features) # (num_halos * seq_length, num_features)
-
-    # Apply mask to arrays
-    flag_central = flag_central[mask] # (num_galaxies_valid, )
-    pos_central = pos_central[mask] # (num_galaxies_valid, 3)
-    vel_central = vel_central[mask] # (num_galaxies_valid, 3)
-    generated = generated[mask] # (num_galaxies_valid, num_features)
-
-    for i in range(num_features):
-        if i == 2:
-            generated[:,i] = np.sign( generated[:,i] ) * (10 ** np.abs( generated[:,i] ) - 1 )
-        else:
-            generated[:,i] = 10 ** generated[:,i]
-    
     print("# Number of valid galaxies: {:d}".format(len(generated)))
     
-    return generated, pos_central, vel_central, flag_central
+    return generated, mask
 
-def generate_galaxy_TransNF(args, logm, pos, vel):
+def generate_galaxy_TransNF(args, logm, verbose=True):
     """
     args: args.gpu_id, args.model_dir, and args.threshold are used
     logm: (num_halos, ), log mass of the halos
-    pos: (num_halos, 3), positions of the halo centers
-    vel: (num_halos, 3), velocities of the halo centers
     """
 
     print("# Use Transformer-NF to generate galaxies")
@@ -170,8 +118,7 @@ def generate_galaxy_TransNF(args, logm, pos, vel):
     ### load Transformer
     with open("{}/args.json".format(args.model_dir), "r") as f:
         opt = json.load(f, object_hook=lambda d: argparse.Namespace(**d))
-    print("opt: ", opt)
-
+    
     norm_params = np.array(opt.norm_params)
     xmin = norm_params[:,0]
     xmax = norm_params[:,1] 
@@ -181,12 +128,15 @@ def generate_galaxy_TransNF(args, logm, pos, vel):
     model.to(device)
     model.load_state_dict(torch.load("{}/model.pth".format(args.model_dir)))
     model.eval()
-    print(model)
-
+    
     flow.to(device)
     flow.load_state_dict(torch.load("{}/flow.pth".format(args.model_dir)))
     flow.eval()
-    print(flow)
+
+    if verbose:
+        print("opt: ", opt)
+        print(model)
+        print(flow)
 
     ### generate galaxies
     print("# Generate galaxies (batch size: {:d})".format(opt.batch_size))
@@ -207,44 +157,203 @@ def generate_galaxy_TransNF(args, logm, pos, vel):
     generated = torch.cat(generated, dim=0) # (num_halos, max_length, num_features)
     generated = generated.cpu().detach().numpy()
 
-    ### Select valid galaxies
-    print("# Select valid galaxies")
+    # De-normalize
+    for i in range(generated.shape[-1]):
+        generated[..., i] = generated[..., i] * (xmax[1+i] - xmin[1+i]) + xmin[1+i]    
+        if i == 2:
+            generated[...,i] = np.sign( generated[...,i] ) * (10 ** np.abs( generated[...,i] ) - 1 )
+        else:
+            generated[...,i] = 10 ** generated[...,i]
 
-    batch, seq_length, num_features = generated.shape
-
-    # Set mask for selection -- sfr > threshold
-    # This mask is applied for both central and satellite -- this is the minimum sfr that the model can generate
+    # Set mask for selection
     sfr = generated[:,:,0]
-    sfr = sfr * (xmax[1] - xmin[1]) + xmin[1]
-    sfr = 10 ** sfr # (num_halos, seq_length)
-    mask = create_mask(sfr, args.threshold) # (num_halos, seq_length)
+    mask = create_mask(sfr, args.threshold) # (num_halos, seq_length)   
+    
+    print("# Number of valid galaxies: {:d}".format(len(generated)))
+    
+    return generated, mask
+
+def populate_galaxies_in_cube(args, logm, pos, vel, redshift, cosmo):
+    
+    if "Transformer_NF" in args.model_dir:
+        generated, mask = generate_galaxy_TransNF(args, logm)
+    else:
+        generated, mask = generate_galaxy(args, logm)
+
+    seq_length = mask.shape[1]
+    num_features = generated.shape[-1]
 
     # Define flag_central
-    flag_central = np.zeros_like(sfr, dtype=bool)
+    flag_central = np.zeros_like(mask, dtype=bool)
     flag_central[:, 0] = True
 
     # Flatten the arrays
-    mask = mask.reshape(-1) # (num_halos * seq_length, ) 
+    mask = mask.reshape(-1)
+    generated = generated.reshape(-1, num_features) # (num_halos * seq_length, num_features)
+    pos_central = np.repeat(pos[:,None,:], seq_length, axis=1).reshape(-1, 3) # (num_halos * seq_length, 3)
+    vel_central = np.repeat(vel[:,None,:], seq_length, axis=1).reshape(-1, 3) # (num_halos * seq_length, 3)
     flag_central = flag_central.reshape(-1)
-    pos_central = np.repeat(pos[:,None,:], seq_length, axis=1).reshape(-1, 3) # (num_halos * max_length, 3)
-    vel_central = np.repeat(vel[:,None,:], seq_length, axis=1).reshape(-1, 3) # (num_halos * max_length, 3)
-    generated = generated.reshape(-1, num_features) # (num_halos * max_length, num_features)
-    
+
     # Apply mask to arrays
-    flag_central = flag_central[mask] # (num_galaxies_valid, )
-    pos_central = pos_central[mask] # (num_galaxies_valid, 3)
-    vel_central = vel_central[mask] # (num_galaxies_valid, 3)
     generated = generated[mask] # (num_galaxies_valid, num_features)
+    pos_central = pos_central[mask] # (num_galaxies_valid, 3)
+    redshift_central = redshift_central[mask] # (num_galaxies_valid, 3)
+    flag_central = flag_central[mask] # (num_galaxies_valid, )
 
-    num_gal = len(flag_central)
-    print("# Number of valid galaxies: {:d}".format(num_gal))
+    sfr = generated[:,0]
+    distance = generated[:,1]
+
+    num_gal = len(sfr)
+
+    ### Determine positions of galaxies
+    print("# Generate positions of galaxies")
+    phi = np.random.uniform(0, 2 * np.pi, size=num_gal)
+    cos_theta = np.random.uniform(-1, 1, size=num_gal)
+    sin_theta = np.sqrt(1 - cos_theta ** 2)    
+
+    pos_galaxies = pos_central
+    pos_galaxies[:,0] += distance * sin_theta * np.cos(phi)
+    pos_galaxies[:,1] += distance * sin_theta * np.sin(phi)
+    pos_galaxies[:,2] += distance * cos_theta
+
+    if args.gen_both: # copy the position in real space before adding redshift space distortion
+        pos_galaxies_real = copy.deepcopy(pos_galaxies) 
+
+    if args.redshift_space:
+        import astropy.units as u
+        H = cosmo.H(redshift).to(u.km/u.s/u.Mpc).value #[km/s/Mpc]
+        hlittle = cosmo.H(0).to(u.km/u.s/u.Mpc).value / 100.0 
+        scale_factor = 1 / (1 + redshift)
+
+        relative_vel_rad = generated[:,2]
+        relative_vel_tan = generated[:,3]
+        relative_vel_rad[flag_central] = 0 # Set vr to 0 for central galaxies
+        alpha = np.random.uniform(0, 2 * np.pi, size=num_gal)
+        vz_gal = - relative_vel_rad * cos_theta + relative_vel_tan * sin_theta * np.cos(alpha)
+        pos_galaxies[:,2] += ( vel_central[:,2] + vz_gal )/ scale_factor / H * hlittle
+
+    return sfr, pos_galaxies_real, pos_galaxies
+
+def populate_galaxies_in_lightcone(args, logm, pos, redshift, cosmo):
+    """
+    args: args.gpu_id, args.model_dir, args.model_config_file, args.args.threshold, and args.param_dir are used
+    logm: (num_halos, )
+    pos: (num_halos, 3)
+    redshift: (num_halos, )
+    """
+
+    print("# Use Transformer to generate SFR")
+
+    opt = copy.deepcopy(args)
+
+    generated_all = []
+    pos_central_all = [] 
+    redshift_central_all = [] 
+    flag_central_all = []
+
+    with open(args.model_config_file, "r") as f:
+        snapshot_dict_str = json.load(f)
+        snapshot_dict = {int(k): v for k, v in snapshot_dict_str.items()}
+
+    print("# Model config:", snapshot_dict)
+    redshifts_of_snapshots = np.array([ v[1] for v in snapshot_dict.values() ])    
+    bin_edges = (redshifts_of_snapshots[:-1] + redshifts_of_snapshots[1:]) / 2.0
+    bin_indices = np.digitize(redshift, bin_edges)  
+
+    if args.param_dir is None:
+        max_sfr_file_list = [ None for snapshot_number in snapshot_dict ]
+    else:
+        max_sfr_file_list = ["{}/max_nbin20_{:d}.txt".format(args.param_dir, snapshot_number) for snapshot_number in snapshot_dict]
+
+    for i, snapshot_number in enumerate(snapshot_dict):
+        model_path, redshift_of_snapshot = snapshot_dict[snapshot_number]
+        print("# Snapshot number: {:d}, Redshift: {:.2f}".format(snapshot_number, redshift_of_snapshot))
+        
+        ### Skip if no haloes in this redshift bin
+        mask_z = (bin_indices == i)
+        if not np.any(mask_z):
+            print("# No haloes in redshift bin {:d} (snapshot number {:d}), skipping...".format(i, snapshot_number))
+            continue
     
-    ### Denormalize
-    generated = generated * (xmax[1:1+num_features] - xmin[1:1+num_features]) + xmin[1:1+num_features]
-    for i in range(num_features):
-        if i == 2:
-            generated[:,i] = np.sign( generated[:,i] ) * (10 ** np.abs( generated[:,i] ) - 1 )
-        else:
-            generated[:,i] = 10 ** generated[:,i]
+        logm_now = logm[mask_z] # (num_halos_in_bin, )
+        pos_now = pos[mask_z] # (num_halos_in_bin, 3)
+        redshift_now = redshift[mask_z] # (num_halos_in_bin, 1)
 
-    return generated, pos_central, vel_central, flag_central
+        opt.model_dir = "{}/{}".format(args.model_dir, model_path)
+        opt.max_sfr_file = max_sfr_file_list[i]
+        opt.prob_threshold = 1e-5
+
+        if "Transformer_NF" in opt.model_dir:
+            raise ValueError("Transformer_NF model is not supported yet. Please use a different model.")
+        else:
+            generated, mask = generate_galaxy(opt, logm_now, verbose=False)
+            
+        seq_length = mask.shape[1]
+        num_features = generated.shape[-1]
+
+        # Define flag_central
+        flag_central = np.zeros_like(mask, dtype=bool)
+        flag_central[:, 0] = True
+
+        # Flatten the arrays
+        mask = mask.reshape(-1)
+        generated = generated.reshape(-1, num_features) # (num_halos * seq_length, num_features)
+        pos_central = np.repeat(pos_now[:,None,:], seq_length, axis=1).reshape(-1, 3) # (num_halos * seq_length, 3)
+        redshift_central = np.repeat(redshift_now[:,None], seq_length, axis=1).reshape(-1) # (num_halos * seq_length)
+        flag_central = flag_central.reshape(-1)
+
+        # Apply mask to arrays
+        generated = generated[mask] # (num_galaxies_valid, num_features)
+        pos_central = pos_central[mask] # (num_galaxies_valid, 3)
+        redshift_central = redshift_central[mask] # (num_galaxies_valid, 3)
+        flag_central = flag_central[mask] # (num_galaxies_valid, )
+        
+        # Append
+        generated_all.append(generated)
+        pos_central_all.append(pos_central)
+        redshift_central_all.append(redshift_central)
+        flag_central_all.append(flag_central)
+
+    generated_all = np.concatenate(generated_all, axis=0) # (num_galaxies_valid, num_features)
+    pos_central_all = np.concatenate(pos_central_all, axis=0)
+    redshift_central_all = np.concatenate(redshift_central_all, axis=0) # (num_galaxies_valid,)
+    flag_central_all = np.concatenate(flag_central_all, axis=0) # (num_galaxies_valid,)
+    
+    ### Distributes galaxies in lightcone
+    sfr = generated_all[:,0]
+    distance = generated_all[:,1]
+
+    num_gal = len(sfr)
+
+    # Determine positions of galaxies
+    print("# Generate positions of galaxies")
+    _phi = np.random.uniform(0, 2 * np.pi, size=num_gal)
+    _cos_theta = np.random.uniform(-1, 1, size=num_gal)
+    _sin_theta = np.sqrt(1 - _cos_theta ** 2)
+    
+    # Convert Mpc to deg
+    from .cosmology_utils import cMpc_to_arcsec, dcMpc_to_dz
+    distance_arcsec = cMpc_to_arcsec(distance, redshift_central_all, cosmo=cosmo, l_with_hlittle=True)
+    distance_z = dcMpc_to_dz(distance, redshift_central_all, cosmo=cosmo, l_with_hlittle=True)
+
+    pos_galaxies = pos_central
+    pos_galaxies[:,0] += distance_arcsec * _sin_theta * np.cos(_phi)
+    pos_galaxies[:,1] += distance_arcsec * _sin_theta * np.sin(_phi)
+    pos_galaxies[:,2] += distance_z * _cos_theta
+    
+    # Add redshift-space distortion
+    if args.redshift_space:
+
+        relative_vel_rad = generated[:,2]
+        relative_vel_tan = generated[:,3]
+        relative_vel_rad[flag_central] = 0 # Set vr to 0 for central galaxies
+        alpha = np.random.uniform(0, 2 * np.pi, size=num_gal)
+        vz_gal = - relative_vel_rad * _cos_theta + relative_vel_tan * _sin_theta * np.cos(alpha)
+        
+        beta = vz_gal / (cspeed * 100) # [(km/s) / (km/s)]
+
+        redshift_rest = pos_galaxies[:,2]
+        pos_galaxies[:,2] = ( 1. + redshift_rest ) * np.sqrt( (1. + beta) / (1. - beta) ) - 1.0
+
+
+    return sfr, pos_galaxies, redshift_central_all

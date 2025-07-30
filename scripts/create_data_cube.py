@@ -19,7 +19,8 @@ from astropy.cosmology import FlatLambdaCDM
 cosmo = FlatLambdaCDM(H0=67.74, Om0=0.3089)
 import astropy.units as u
 
-from cosmoglint.utils.generation_utils import save_intensity_data, save_catalog_data
+from cosmoglint.utils.io_utils import save_intensity_data, save_catalog_data
+from cosmoglint.utils.generation_utils import populate_galaxies_in_cube
 
 cspeed = 3e10 # [cm/s]
 micron = 1e-4 # [cm]
@@ -165,39 +166,8 @@ def create_data(args):
             save_intensity_data(intensities, args, args.output_fname)
 
     else:
-        if "Transformer_NF" in args.model_dir:
-            from cosmoglint.utils.generation_utils import generate_galaxy_TransNF
-            generated, pos_central, vel_central, flag_central = generate_galaxy_TransNF(args, logm, pos, vel)
-        else:
-            from cosmoglint.utils.generation_utils import generate_galaxy
-            generated, pos_central, vel_central, flag_central = generate_galaxy(args, logm, pos, vel)
-
-        sfr = generated[:,0]
-        distance = generated[:,1]
-    
-        num_gal = len(sfr)
-
-        ### Determine positions of galaxies
-        print("# Generate positions of galaxies")
-        phi = np.random.uniform(0, 2 * np.pi, size=num_gal)
-        cos_theta = np.random.uniform(-1, 1, size=num_gal)
-        sin_theta = np.sqrt(1 - cos_theta ** 2)    
-
-        pos_galaxies = pos_central
-        pos_galaxies[:,0] += distance * sin_theta * np.cos(phi)
-        pos_galaxies[:,1] += distance * sin_theta * np.sin(phi)
-        pos_galaxies[:,2] += distance * cos_theta
-
-        if args.gen_both: # copy the position in real space before adding redshift space distortion
-            pos_galaxies_real = copy.deepcopy(pos_galaxies) 
-
-        if args.redshift_space:
-            relative_vel_rad = generated[:,2]
-            relative_vel_tan = generated[:,3]
-            relative_vel_rad[flag_central] = 0 # Set vr to 0 for central galaxies
-            alpha = np.random.uniform(0, 2 * np.pi, size=num_gal)
-            vz_gal = - relative_vel_rad * cos_theta + relative_vel_tan * sin_theta * np.cos(alpha)
-            pos_galaxies[:,2] += ( vel_central[:,2] + vz_gal )/ scale_factor / H * hlittle
+        
+        sfr, pos_galaxies_real, pos_galaxies = populate_galaxies_in_cube(args, logm, pos, vel, redshift, cosmo=cosmo)
 
         if args.gen_both:
             pos_list = [pos_galaxies_real, pos_galaxies]

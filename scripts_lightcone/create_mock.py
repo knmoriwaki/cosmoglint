@@ -26,7 +26,9 @@ Jy = 1.0e-23        # jansky (erg/s/cm2/Hz)
 arcsec = 4.848136811094e-6 # [rad] ... arcmin / 60 //
 
 from line_model import calc_line_luminosity, line_dict
-from cosmoglint.utils.lightcone_utils import cMpc_to_arcsec, dcMpc_to_dz, z_to_log_lumi_dis, load_lightcone_data, generate_galaxy_in_lightcone
+from cosmoglint.utils.cosmology_utils import z_to_log_lumi_dis
+from cosmoglint.utils.generation_utils import populate_galaxies_in_lightcone
+from cosmoglint.utils.io_utils import load_lightcone_data
 
 def parse_args():
 
@@ -117,45 +119,10 @@ def create_mock(args):
         if "Transformer_NF" in args.model_dir:
             ValueError("Transformer_NF model is not supported yet. Please use the old model.")
         else:
-            generated, pos_central, redshift_real_central, flag_central = generate_galaxy_in_lightcone(args, logm, pos, redshift_real)
+            sfr, pos_galaxies, redshift_real = populate_galaxies_in_lightcone(args, logm, pos, redshift_real, cosmo=cosmo)
 
-        log_sfr = np.log10( generated[:,0] )
-        distance = generated[:,1]
-
-        num_gal = len(log_sfr)
-
-        redshift_real = redshift_real_central
-
-        ### Determine positions of galaxies
-        print("# Generate positions of galaxies")
-        _phi = np.random.uniform(0, 2 * np.pi, size=num_gal)
-        _cos_theta = np.random.uniform(-1, 1, size=num_gal)
-        _sin_theta = np.sqrt(1 - _cos_theta ** 2)
-        
-        # Convert Mpc to deg
-        distance_arcsec = cMpc_to_arcsec(distance, redshift_real, cosmo, l_with_hlittle=True)
-        distance_z = dcMpc_to_dz(distance, redshift_real, cosmo, l_with_hlittle=True)
-
-        pos_galaxies = pos_central
-        pos_galaxies[:,0] += distance_arcsec * _sin_theta * np.cos(_phi)
-        pos_galaxies[:,1] += distance_arcsec * _sin_theta * np.sin(_phi)
-        pos_galaxies[:,2] += distance_z * _cos_theta
-
+        log_sfr = np.log10( sfr )
         log_lumi_dis = z_to_log_lumi_dis(redshift_real, cosmo) # [cm]
-        
-        if args.redshift_space:
-            relative_vel_rad = generated[:,2]
-            relative_vel_tan = generated[:,3]
-            relative_vel_rad[flag_central] = 0 # Set vr to 0 for central galaxies
-            alpha = np.random.uniform(0, 2 * np.pi, size=num_gal)
-            vz_gal = - relative_vel_rad * _cos_theta + relative_vel_tan * _sin_theta * np.cos(alpha)
-
-            H = cosmo.H(redshift_real).to(u.km/u.s/u.Mpc).value #[km/s/Mpc]
-            hlittle = cosmo.H(0).to(u.km/u.s/u.Mpc).value / 100.0 
-            scale_factor = 1 / (1 + redshift_real)
-            dcMpc = vz_gal / scale_factor / H * hlittle # [Mpc/h]
-            distance_z = dcMpc_to_dz(dcMpc, redshift_real, cosmo=cosmo, l_with_hlittle=True)
-            pos_galaxies[:,2] += distance_z
 
         if args.gen_catalog:
             NotImplementedError("Generating galaxy catalog is not implemented yet.")
