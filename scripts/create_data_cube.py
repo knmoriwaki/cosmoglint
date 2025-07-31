@@ -167,7 +167,7 @@ def create_data(args):
 
     else:
         
-        sfr, pos_galaxies_real, pos_galaxies = populate_galaxies_in_cube(args, logm, pos, vel, redshift, cosmo=cosmo)
+        sfr, pos_galaxies_real, pos_galaxies = populate_galaxies_in_cube(args, logm, pos, vel, redshift, cosmo)
 
         if args.gen_both:
             pos_list = [pos_galaxies_real, pos_galaxies]

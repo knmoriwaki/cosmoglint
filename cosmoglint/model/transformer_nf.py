@@ -122,7 +122,7 @@ def generate_with_transformer_nf(transformer, flow, x_cond, stop_predictor=None,
             if stop_predictor is not None:  
                 stop_prob = stop_predictor(context) # (batch, )
                 stop_now = stop_prob > stop_threshold
-                stop_flags |= stop_now
+                stop_flags = stop_now
             
             elif stop_threshold is not None:
                 if t > 0:
@@ -181,14 +181,12 @@ class BimodalNormal(StandardNormal):
             device = self._log_z.device
             half = num_samples // 2
 
-            # サンプルを2つの山に分ける
             samples1 = torch.randn(half, *self._shape, device=device) - self.offset
             samples2 = torch.randn(num_samples - half, *self._shape, device=device) + self.offset
             samples = torch.cat([samples1, samples2], dim=0)
-            return samples[torch.randperm(num_samples)]  # ランダムに混ぜる
+            return samples[torch.randperm(num_samples)]  
 
         else:
-            # context に応じて num_samples × context_size 分のサンプルを出す
             context_size = context.shape[0]
             total = context_size * num_samples
             device = context.device
@@ -202,7 +200,6 @@ class BimodalNormal(StandardNormal):
             return torchutils.split_leading_dim(samples, [context_size, num_samples])
 
     def _log_prob(self, inputs, context=None):
-        # 2つの正規分布の平均を取った log_prob（混合分布）
         if inputs.shape[1:] != self._shape:
             raise ValueError(
                 "Expected input of shape {}, got {}".format(
@@ -212,7 +209,6 @@ class BimodalNormal(StandardNormal):
 
         x = inputs.view(inputs.size(0), -1)
 
-        # 計算を安定させるため log-sum-exp を使う
         logp1 = -0.5 * torch.sum((x + self.offset)**2, dim=1) - self._log_z
         logp2 = -0.5 * torch.sum((x - self.offset)**2, dim=1) - self._log_z
 
@@ -220,7 +216,6 @@ class BimodalNormal(StandardNormal):
         return log_prob
 
     def _mean(self, context):
-        # 平均は0（左右対称のため）
         if context is None:
             return self._log_z.new_zeros(self._shape)
         else:
@@ -248,10 +243,8 @@ class ConditionalBimodal(nn.Module):
         scale_raw = params[:, 2*self.latent_dim:2*self.latent_dim+1]  # shape (batch, 1)
         weight_logits = params[:, 2*self.latent_dim+1:]  # shape (batch, 1)
 
-        # 保護処理
         scale = F.softplus(scale_raw) + 1e-3
 
-        # 作成
         mix_logits = torch.cat([weight_logits, -weight_logits], dim=1)  # (batch, 2)
         mix_dist = Categorical(logits=mix_logits)
 
@@ -267,9 +260,9 @@ class ConditionalBimodal(nn.Module):
         context: (batch, context_dim)
         return: (batch, num_samples, latent_dim)
         """
-        dist = self.get_distribution(context)  # batch個の mixture dist
+        dist = self.get_distribution(context)  
         samples = dist.sample((num_samples,))  # (num_samples, batch, latent_dim)
-        return samples.permute(1, 0, 2)  # → (batch, num_samples, latent_dim)
+        return samples.permute(1, 0, 2)  # (batch, num_samples, latent_dim)
 
     def log_prob(self, x, context):
         """

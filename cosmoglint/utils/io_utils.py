@@ -13,10 +13,6 @@ def my_save_model(model, fname):
     torch.save(model.state_dict(), fname)
     print(f"# Model saved to {fname}")
 
-def my_load_model(model, fname):
-    model.load_state_dict(torch.load(fname))
-    print(f"# Model loaded from {fname}")
-
 def save_catalog_data(pos_list, value, args, output_fname):
     if not isinstance(pos_list, list):
         pos_list = [pos_list]

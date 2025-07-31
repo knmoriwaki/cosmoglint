@@ -116,10 +116,8 @@ def create_mock(args):
         ValueError("Please specify the model directory with --model_dir")
         
     else:
-        if "Transformer_NF" in args.model_dir:
-            ValueError("Transformer_NF model is not supported yet. Please use the old model.")
-        else:
-            sfr, pos_galaxies, redshift_real = populate_galaxies_in_lightcone(args, logm, pos, redshift_real, cosmo=cosmo)
+        
+        sfr, pos_galaxies, redshift_real = populate_galaxies_in_lightcone(args, logm, pos, redshift_real, cosmo)
 
         log_sfr = np.log10( sfr )
         log_lumi_dis = z_to_log_lumi_dis(redshift_real, cosmo) # [cm]
