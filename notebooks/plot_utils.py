@@ -34,6 +34,32 @@ micron = 1e-4 # [cm]
 GHz = 1e9
 Jy = 1.0e-23        # jansky (erg/s/cm2/Hz)
 arcsec = 4.848136811094e-6 # [rad] ... arcmin / 60 //
+angstrom = 1e-8 # [cm]
+cspeed_value = cspeed.value * 100 # [cm/s]
+
+line_dict = {
+    "CO(1-0)": [115.271 * GHz, 2601.7 * micron],
+    "CO(2-1)": [230.538 * GHz, 1300.9 * micron],
+    "CO(3-2)": [345.796 * GHz, 867.3 * micron],
+    "CO(4-3)": [461.041 * GHz, 650.5 * micron],
+    "CO(5-4)": [576.268 * GHz, 521.0 * micron],
+    "CO(6-5)": [691.473 * GHz, 433.7 * micron],
+    "CO(7-6)": [806.652 * GHz, 371.8 * micron],
+    "CO(8-7)": [921.800 * GHz, 325.0 * micron],
+    "CO(9-8)": [1036.912 * GHz, 289.0 * micron],
+    "CO(10-9)": [1151.985 * GHz, 260.0 * micron],
+    "CO(11-10)": [1267.014 * GHz, 237.0 * micron],
+    "CO(12-11)": [1381.995 * GHz, 217.0 * micron],
+    "CO(13-12)": [1496.922 * GHz, 200.0 * micron],
+    "[CII]158": [1900.537 * GHz, 158.0 * micron],
+    "[OIII]88": [3393.006 * GHz, 88.0 * micron],
+    "[NII]205": [1461.131 * GHz, 205.0 * micron],
+    "[NII]122": [2459.381 * GHz, 122.0 * micron],
+    "[CI](1-0)": [492.16065 * GHz, 609.14 * micron],
+    "[CI](2-1)": [809.34197 * GHz, 370.42 * micron],
+    "[OIII]5007": [5.997e5 * GHz, 5007.0 * angstrom],
+    "Ha": [4.568e5 * GHz, 6562.8 * angstrom],  
+}
 
 def cMpc_to_arcsec(l_cMpc, z, cosmo=cosmo_default, l_with_hlittle=False): 
     if l_with_hlittle:
@@ -158,7 +184,7 @@ def plot_mean(frequency, intensity, intensity_line, title=None, lines_to_show=[]
         plt.xscale("log")
     plt.ylim(ylim)
     
-def show_map(frequency, intensity, intensity_line, side_length, lines_to_show=[], dy=1, log_scale=False, smoothing=0, noise_sigma=0):
+def show_map(frequency, intensity, intensity_line, side_length, lines_to_show=[], dy=1, log_scale=False, smoothing=0, noise_sigma=0, inverse_x=False):
     """
     show intensity map in x-z plane
     input:
@@ -175,25 +201,45 @@ def show_map(frequency, intensity, intensity_line, side_length, lines_to_show=[]
     if noise_sigma > 0:
         Nmap += 1
 
+    if inverse_x:
+        frequency = frequency[::-1]
+        intensity = intensity[:, :, ::-1]
+        for line_name in intensity_line:
+            intensity_line[line_name] = intensity_line[line_name][:, :, ::-1]
+
+    default_xticks_mode = "wavelength_um" if inverse_x else "frequency"
+
     plt.figure(figsize=(10, Nmap*2))
     plt.subplots_adjust(hspace=1)
 
-    fmin = frequency[0]
-    fmax = frequency[-1]
+    def show_ticks(xvalues, xleft=None, xright=None, mode="frequency"):
+        if xleft is None: xleft = xvalues[0]
+        if xright is None: xright = xvalues[-1]
 
-    def show_ticks(fmin=fmin, fmax=fmax, freq=frequency):
-        if fmax - fmin < 150:
-            tick_values = [ int(fmin/100) * 100 + 20*i for i in range(10) ]
-        elif fmax - fmin > 10000:
-            tick_values = [ int(fmin/10000) * 10000 + 2000*i for i in range(30) ]
+        xmax = np.max(xvalues)
+        xmin = np.min(xvalues)
+        
+        if mode == "frequency":
+            if xmax - xmin < 150:
+                tick_values = [ int(xmin/100) * 100 + 20*i for i in range(10) ]
+            elif xmax - xmin < 10000:
+                tick_values = [ int(xmin/100) * 100 + 100*i for i in range(10) ]
+            elif xmax - xmin < 100000:
+                tick_values = [ int(xmin/10000) * 10000 + 2000*i for i in range(30) ]
+            else:
+                tick_values = [ int(xmin/100000) * 100000 + 20000*i for i in range(30) ]
+        elif mode == "wavelength_um":
+            tick_values = [1, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0]
+        elif "redshift" in mode:
+            tick_values = [0, 0.5, 1, 2, 3, 4, 5, 6, 7, 8]
         else:
-            tick_values = [ int(fmin/100) * 100 + 100*i for i in range(10) ]
-        tick_values = [v for v in tick_values if v > fmin and v < fmax]
-        interpolator = interp1d(freq, np.arange(len(freq)))
+            raise ValueError("Unknown mode: {}".format(mode))
+        tick_values = [v for v in tick_values if v > xmin and v < xmax]
+        interpolator = interp1d(xvalues, np.arange(len(xvalues)))
         tick_positions = interpolator(tick_values)
         plt.xticks(ticks=tick_positions, labels=tick_values)
 
-    def show_a_map(imap, map, side_length=side_length, iy=0, dy=1, vmin=None, vmax=None, label=None, log_scale=log_scale):
+    def show_a_map(imap, map, side_length=side_length, iy=0, dy=1, vmin=None, vmax=None, label=None, log_scale=log_scale, xticks_mode=default_xticks_mode):
         plt.subplot2grid((Nmap,1), (imap,0))
         map_xz = map[:, iy:iy+dy, :].sum(axis=1)
         if log_scale: map_xz = np.log10(map_xz)
@@ -207,8 +253,22 @@ def show_map(frequency, intensity, intensity_line, side_length, lines_to_show=[]
         plt.yticks([])
         x = side_length / 3600
         plt.ylabel("{:.1f} deg".format(x))
-        plt.xlabel("frequency [GHz]")
-        show_ticks()
+
+        if xticks_mode == "frequency":
+            xvalues = frequency
+            plt.xlabel("frequency [GHz]")
+        elif xticks_mode == "wavelength_um":
+            xvalues = cspeed_value / (frequency * GHz) / micron  # [micron]
+            plt.xlabel(r"wavelength $[\rm \mu m]$")
+        elif "redshift" in xticks_mode:
+            line_name = xticks_mode.split("_")[1]
+            freq_rest = line_dict[line_name][0] / GHz
+            xvalues = freq_rest / frequency - 1
+            plt.xlabel("redshift")
+        else:
+            raise ValueError("Unknown xticks_mode: {}".format(xticks_mode))
+        show_ticks(xvalues=xvalues, mode=xticks_mode)
+
 
     if dy < 0:
         dy = intensity.shape[1]
@@ -224,7 +284,7 @@ def show_map(frequency, intensity, intensity_line, side_length, lines_to_show=[]
     count += 1
     for i, line_name in enumerate(lines_to_show):
         if line_name in intensity_line:
-            show_a_map(count, intensity_line[line_name], dy=dy, label=line_name)
+            show_a_map(count, intensity_line[line_name], dy=dy, label=line_name, xticks_mode="redshift_{}".format(line_name))
             count += 1
         else:
             print(f"Warning: {line_name} not found in intensity_line, skipping...")

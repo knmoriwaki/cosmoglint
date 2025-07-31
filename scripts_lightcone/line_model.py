@@ -4,6 +4,7 @@ GHz = 1e9
 micron = 1e-4 # [cm]
 angstrom = 1e-8 # [cm]
 
+"""
 line_dict = {
     "CO(1-0)": [115.271 * GHz, 2601.7 * micron],
     "CO(2-1)": [230.538 * GHz, 1300.9 * micron],
@@ -24,8 +25,13 @@ line_dict = {
     #"[NII]122": [2459.381 * GHz, 122.0 * micron],
     "[CI](1-0)": [492.16065 * GHz, 609.14 * micron],
     "[CI](2-1)": [809.34197 * GHz, 370.42 * micron],
-    #"[OIII]5007": [5.997e5 * GHz, 5007.0 * angstrom],
 }
+"""
+line_dict = {
+    "Ha": [4.568e5 * GHz, 6562.8 * angstrom],  
+    "[OIII]5007": [5.997e5 * GHz, 5007.0 * angstrom],
+}
+
 
 FIR_SFR =  2.22e43
 Lsun = 3.828e33  # erg/s
@@ -80,6 +86,9 @@ def calc_line_luminosity(args, z, log_sfr, line_name):
         log_lumi = log_lumi + 0.63 * ( diff ) + 0.17 # Bethermin+22 Eq. 10 [erg/s]
     elif line_name == "[OIII]5007":
         log_lumi = log_sfr + np.log10( 1.32e41 ) # [erg/s]
+    elif line_name == "Ha":
+        log_lumi = log_sfr + np.log10( 1.2e41 ) # [erg/s] Kennicutt+1998 Eq. 2 (Salpeter IMF)
+
         
     if "CO" in line_name:
         # Convert [K km s-1 pc2] -> [erg/s] 
