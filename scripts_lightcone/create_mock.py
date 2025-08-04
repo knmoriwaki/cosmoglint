@@ -49,7 +49,7 @@ def parse_args():
     parser.add_argument("--gen_both", action="store_true", default=False, help="Generate both real and redshift space data")
 
     parser.add_argument("--redshift_min", type=float, default=0.0, help="Minimum redshift")
-    parser.add_argument("--redshift_max", type=float, default=6.0, help="Maximum redshift")
+    parser.add_argument("--redshift_max", type=float, default=7.0, help="Maximum redshift")
 
     parser.add_argument("--logm_min", type=float, default=11.0, help="Minimum log mass")
     parser.add_argument("--threshold", type=float, default=1e-3, help="Threshold for SFR")
@@ -59,12 +59,14 @@ def parse_args():
     parser.add_argument("--gen_catalog", action="store_true", default=False, help="Generate galaxy catalog with SFR > catalog_threshold")
     parser.add_argument("--catalog_threshold", type=float, default=10, help="Threshold for SFR in the catalog")
 
-    ### Generate mock data with frequency bins if --gen_mock is set otherwise galaxy catalog with SFR > catalog_threshold is created
+    ### Generate mock data with frequency bins
     parser.add_argument("--side_length", type=float, default=300.0, help="side length in arcsec")
     parser.add_argument("--angular_resolution", type=float, default=30, help="angular resolution in arcsec")
     parser.add_argument("--fmin", type=float, default=10.0, help="minimum frequency in GHz")
     parser.add_argument("--fmax", type=float, default=100.0, help="maximum frequency in GHz")
     parser.add_argument("--R", type=float, default=100, help="spectral resolution R")
+
+    parser.add_argument("--random_patch", action="store_true", default=False, help="Use random patch of the lightcone")
 
     ### Generative model parameters
     parser.add_argument("--model_dir", type=str, default=None, help="The directory of the model. If not given, use 4th column as intensity.")
@@ -84,6 +86,7 @@ def create_mock(args):
     print("# spectral resolution R: {:.4f}".format(args.R))
     print("# area : {:.4f} arcsec x {:.4f} arcsec".format(args.side_length, args.side_length))
     print("# angular resolution : {:.4f} arcsec".format(args.angular_resolution))
+    print("# Use redshift from {:.4f} to {:.4f}".format(args.redshift_min, args.redshift_max))
 
     if args.gen_both:
         NotImplementedError("Generating both real and redshift space data is not implemented yet.")
@@ -99,26 +102,55 @@ def create_mock(args):
         print("# Using real space")
         redshift_obs = copy.deepcopy(redshift_real)
 
-    ### Mask out small halos
-    mask = (logm > args.logm_min)
-    mask = mask & (redshift_obs >= args.redshift_min) & (redshift_obs <= args.redshift_max)
-    
-    logm = logm[mask]
-    pos_x = pos_x[mask]
-    pos_y = pos_y[mask]
-    redshift_real = redshift_real[mask]
-    redshift_obs = redshift_obs[mask] # Observed redshift if redshift_space is True, otherwise equals to redshift_real
-
     pos = np.stack([pos_x, pos_y, redshift_obs], axis=1) # (num_halos, 3)
+    
+    # Crop the lightcone 
+    # We assume the lightcone area is a circle centered at (0, 0)
+    area_radius = np.sqrt( pos[:,0]**2 + pos[:,1]**2 ).max()
+    if args.random_patch:
+        # randomly rotate the lightcone
+        rotation_angle = np.random.uniform(0, 2 * np.pi)
+        pos[:,0] = pos_x * np.cos(rotation_angle) - pos_y * np.sin(rotation_angle)
+        pos[:,1] = pos_x * np.sin(rotation_angle) + pos_y * np.cos(rotation_angle)
+
+        # randomly flip the x and y coordinates
+        pos[:,0] *= np.random.choice([-1, 1])
+        pos[:,1] *= np.random.choice([-1, 1])
         
-    ### Create mock data
+        # randomly select a center point for the lightcone
+        rho_max = area_radius - args.side_length / np.sqrt(2.)
+        rho_center = np.sqrt(np.random.uniform(0, 1)) * rho_max
+        theta_center = np.random.uniform(0, 2 * np.pi)
+        xstart = rho_center * np.cos(theta_center) - args.side_length / np.sqrt(2.)
+        ystart = rho_center * np.sin(theta_center) - args.side_length / np.sqrt(2.)
+    else:
+        xstart = - area_radius / np.sqrt(2.)
+        ystart = - area_radius / np.sqrt(2.)
+
+    print("# Cropping lightcone to start at: ({:.4f}, {:.4f}) arcsec".format(xstart, ystart))
+    pos[:,0] -= xstart
+    pos[:,1] -= ystart
+
+    # Apply the mask
+    mask = ( pos[:,0] >= 0 ) & ( pos[:,0] <= args.side_length ) & ( pos[:,1] >= 0 ) & ( pos[:,1] <= args.side_length ) \
+            & ( pos[:,2] >= args.redshift_min ) & ( pos[:,2] <= args.redshift_max ) \
+            & ( logm > args.logm_min )
+
+    logm = logm[mask]
+    pos = pos[mask]
+    redshift_real = redshift_real[mask]
+
+    if len(logm) == 0:
+        raise ValueError("No galaxies found in the specified redshift range and mass range.")
+
+    # Create mock data
     if args.model_dir == None:
         ValueError("Please specify the model directory with --model_dir")
         
     else:
         
         sfr, pos_galaxies, redshift_real = populate_galaxies_in_lightcone(args, logm, pos, redshift_real, cosmo)
-
+        
         log_sfr = np.log10( sfr )
         log_lumi_dis = z_to_log_lumi_dis(redshift_real, cosmo) # [cm]
 

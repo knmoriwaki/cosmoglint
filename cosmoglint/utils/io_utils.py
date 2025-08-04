@@ -186,9 +186,6 @@ def load_lightcone_data(input_fname, cosmo):
         pos_x = theta * np.cos( phi * np.pi / 180. ) # [arcsec] 
         pos_y = theta * np.sin( phi * np.pi / 180. ) # [arcsec]
 
-        theta_max = np.max(theta)
-        pos_x += theta_max / 1.5
-        pos_y += theta_max / 1.5
         
         print("# Minimum log mass in catalog: {:.5f}".format(np.min(logm)))
         print("# Maximum pos_x: {:.3f} arcsec".format(np.max(pos_x)))
