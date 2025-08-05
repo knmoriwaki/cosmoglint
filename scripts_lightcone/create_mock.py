@@ -59,14 +59,14 @@ def parse_args():
     parser.add_argument("--gen_catalog", action="store_true", default=False, help="Generate galaxy catalog with SFR > catalog_threshold")
     parser.add_argument("--catalog_threshold", type=float, default=10, help="Threshold for SFR in the catalog")
 
-    ### Generate mock data with frequency bins
+    ### Mock parameters
     parser.add_argument("--side_length", type=float, default=300.0, help="side length in arcsec")
     parser.add_argument("--angular_resolution", type=float, default=30, help="angular resolution in arcsec")
     parser.add_argument("--fmin", type=float, default=10.0, help="minimum frequency in GHz")
     parser.add_argument("--fmax", type=float, default=100.0, help="maximum frequency in GHz")
     parser.add_argument("--R", type=float, default=100, help="spectral resolution R")
-
     parser.add_argument("--random_patch", action="store_true", default=False, help="Use random patch of the lightcone")
+    parser.add_argument("--intensity_unit", type=str, default="Jy/sr", help="Intensity unit to use. Default is Jy/sr.")
 
     ### Generative model parameters
     parser.add_argument("--model_dir", type=str, default=None, help="The directory of the model. If not given, use 4th column as intensity.")
@@ -212,7 +212,13 @@ def create_mock(args):
                         
                         print("# Found {} valid galaxies for {}; Total flux {:.3e}".format(np.sum(valid_mask), line_name, np.sum(flux_valid)))
 
-                        intensity_valid = flux_valid / dflist[indices_valid[:, 2]] / Jy / ( args.angular_resolution * arcsec )**2 # [Jy/sr]
+                        if args.intensity_unit == "erg/s/cm2/Hz/beam":
+                            intensity_valid = flux_valid / dflist[indices_valid[:, 2]] # [erg/s/cm2/Hz]
+                        elif args.intensity_unit == "erg/s/cm2/sr":
+                            intensity_valid = flux_valid / ( args.angular_resolution * arcsec )**2
+                        else: # Default: "Jy/sr"
+                            intensity_valid = flux_valid / dflist[indices_valid[:, 2]] / Jy / ( args.angular_resolution * arcsec )**2 # [Jy/sr]
+
                             
                         np.add.at(intensity_line, (indices_valid[:, 0], indices_valid[:, 1], indices_valid[:, 2]), intensity_valid)
 
