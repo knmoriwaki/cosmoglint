@@ -88,7 +88,7 @@ def create_data(args):
         
         hlittle = cosmo.H(0).to(u.km/u.s/u.Mpc).value / 100.0 
 
-        logm = np.log10( mycat.data["Mass"] / hlittle ) # [Msun]
+        mass = mycat.data["Mass"] / hlittle # [Msun]
         pos = mycat.data["pos"]
         vel = mycat.data["vel"]
 
@@ -100,18 +100,18 @@ def create_data(args):
         data = np.loadtxt(args.input_fname)
         # Input data: logm, x, y, z, vx, vy, vz, value
 
-        logm = data[:, 0]
+        mass = 10 ** data[:, 0]
         pos = data[:, 1:4]
         vel = data[:, 4:7]
 
-    logm += np.log10(args.mass_correction_factor) 
+    mass *= args.mass_correction_factor
 
     ### Mask out small halos
-    print("# Minimum log mass in catalog [Msun]: {:.5f}".format(np.min(logm)))
-    print("# Maximum log mass in catalog [Msun]: {:.5f}".format(np.max(logm)))
+    print("# Minimum log mass in catalog [Msun]: {:.5f}".format(np.min(np.log10(mass))))
+    print("# Maximum log mass in catalog [Msun]: {:.5f}".format(np.max(np.log10(mass))))
     print("# Use halos with log mass [Msun] > {}".format(args.logm_min))
-    mask = logm > args.logm_min
-    logm = logm[mask]
+    mask = (np.log10(mass) > args.logm_min)
+    mass = mass[mask]
     pos = pos[mask]
     vel = vel[mask]
 
@@ -167,7 +167,7 @@ def create_data(args):
 
     else:
         
-        sfr, pos_galaxies_real, pos_galaxies = populate_galaxies_in_cube(args, logm, pos, vel, redshift, cosmo)
+        sfr, pos_galaxies_real, pos_galaxies = populate_galaxies_in_cube(args, mass, pos, vel, redshift, cosmo)
 
         if args.gen_both:
             pos_list = [pos_galaxies_real, pos_galaxies]

@@ -22,11 +22,11 @@ def parse_args():
     parser.add_argument("--gpu_id", type=int, default=0)
     parser.add_argument("--output_dir", type=str, default="output")
     parser.add_argument("--max_length", type=int, default=30)
-    parser.add_argument("--use_dist", action="store_true")
-    parser.add_argument("--use_vel", action="store_true")
+    parser.add_argument("--input_features", type=str, nargs='+', default=["HaloMass"])
+    parser.add_argument("--output_features", type=str, nargs='+', default=["SubgroupSFR", "SubgroupDist", "SubgroupVrad", "SubgroupVtan"])
     parser.add_argument("--seed", type=int, default=12345)
 
-    parser.add_argument("--norm_param_file", type=str, default="./norm_params.txt")
+    parser.add_argument("--norm_param_file", type=str, default="./norm_params.json")
 
     # training parameters
     parser.add_argument("--data_path", type=str, nargs='+', default=["data.h5"])
@@ -67,9 +67,27 @@ def train_model(args):
 
     device = torch.device(f"cuda:{args.gpu_id}" if torch.cuda.is_available() else "cpu")
 
+    ### Load model
+    args.num_condition = len(input_features)
+    args.num_features = len(output_features)
+
+    model, flow = transformer_nf_model(args)
+    
+    if args.load_epoch > 0:
+        model.load_state_dict(torch.load(f"{args.output_dir}/model_ep{args.load_epoch}.pth", map_location="cpu"))
+        flow.load_state_dict(torch.load(f"{args.output_dir}/flow_ep{args.load_epoch}.pth", map_location="cpu"))
+        
+    model.to(device)
+    flow.to(device)
+    
+    if args.verbose:
+        print(model)
+        print(flow)
+
     ### Load data
-    norm_params = np.loadtxt(args.norm_param_file)
-    dataset = MyDataset(args.data_path, max_length=args.max_length, norm_params=norm_params, use_dist=args.use_dist, use_vel=args.use_vel)
+    with open(args.norm_param_file, "r") as f:
+        norm_param_dict = json.load(f)
+    dataset = MyDataset(args.data_path, input_features=args.input_features, output_features=args.output_features, max_length=args.max_length, norm_param_dict=norm_param_dict)
     train_size = int(args.train_ratio * len(dataset))
     val_size = len(dataset) - train_size
     train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
@@ -90,29 +108,12 @@ def train_model(args):
     else:
         train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
         val_dataloader = DataLoader(val_dataset, batch_size=args.batch_size)
-
-    args.num_condition = 1
-    _, args.num_features = train_dataset[0][1].shape
     
     print(f"# Training data: {len(train_dataset)}")
     print(f"# Validation data: {len(val_dataset)}")
-
-    ### Load model
-    model, flow = transformer_nf_model(args)
-    
-    if args.load_epoch > 0:
-        model.load_state_dict(torch.load(f"{args.output_dir}/model_ep{args.load_epoch}.pth", map_location="cpu"))
-        flow.load_state_dict(torch.load(f"{args.output_dir}/flow_ep{args.load_epoch}.pth", map_location="cpu"))
-        
-    model.to(device)
-    flow.to(device)
-    
-    if args.verbose:
-        print(model)
-        print(flow)
         
     ### Save arguments
-    args.norm_params = norm_params.tolist()
+    args.norm_param_dict = norm_param_dict
     fname = f"{args.output_dir}/args.json"
     with open(fname, "w") as f:
         json.dump(vars(args), f)

@@ -5,6 +5,7 @@ gpu_id=0
 threshold=1e-3
 
 side_length=7200 #[arcsec]
+#side_length=36000
 angular_resolution=10 # [arcsec]
 zmin=0.2
 zmax=6.0
@@ -18,7 +19,12 @@ model_dir=../scripts/runs/output_transformer
 
 irun=1
 irun_id=$(printf "%05d" $irun)
-input_fname=../dataset/Pinocchio/my_lightcone/output/pinocchio.r${irun_id}.plc.out
+
+if [ $side_length -gt 10000 ]; then
+    input_fname=../dataset/Pinocchio/my_lightcone/output_large/pinocchio.r${irun_id}.plc.out
+else
+    input_fname=../dataset/Pinocchio/my_lightcone/output/pinocchio.r${irun_id}.plc.out
+fi
 
 output_fname=${output_dir}/pinocchio.run${irun}.lightcone_sfrd_map.${side_length}sec_zmin${zmin}_zmax${zmax}_dz${dz}_rsd.h5
 

@@ -92,9 +92,9 @@ def create_mock(args):
         NotImplementedError("Generating both real and redshift space data is not implemented yet.")
 
     ### Load data
-    logm, pos_x, pos_y, redshift_obs, redshift_real = load_lightcone_data(args.input_fname, cosmo=cosmo)
+    mass, pos_x, pos_y, redshift_obs, redshift_real = load_lightcone_data(args.input_fname, cosmo=cosmo)
 
-    logm += np.log10(args.mass_correction_factor)
+    mass *= args.mass_correction_factor
 
     if args.redshift_space:
         print("# Using redshift space")
@@ -134,13 +134,13 @@ def create_mock(args):
     # Apply the mask
     mask = ( pos[:,0] >= 0 ) & ( pos[:,0] <= args.side_length ) & ( pos[:,1] >= 0 ) & ( pos[:,1] <= args.side_length ) \
             & ( pos[:,2] >= args.redshift_min ) & ( pos[:,2] <= args.redshift_max ) \
-            & ( logm > args.logm_min )
+            & ( np.log10(mass) > args.logm_min )
 
-    logm = logm[mask]
+    mass = mass[mask]
     pos = pos[mask]
     redshift_real = redshift_real[mask]
 
-    if len(logm) == 0:
+    if len(mass) == 0:
         raise ValueError("No galaxies found in the specified redshift range and mass range.")
 
     # Create mock data
@@ -149,7 +149,7 @@ def create_mock(args):
         
     else:
         
-        sfr, pos_galaxies, redshift_real = populate_galaxies_in_lightcone(args, logm, pos, redshift_real, cosmo)
+        sfr, pos_galaxies, redshift_real = populate_galaxies_in_lightcone(args, mass, pos, redshift_real, cosmo)
         
         log_sfr = np.log10( sfr )
         log_lumi_dis = z_to_log_lumi_dis(redshift_real, cosmo) # [cm]

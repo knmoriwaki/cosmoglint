@@ -50,7 +50,6 @@ def parse_args():
     parser.add_argument("--gen_catalog", action="store_true", default=False, help="Generate galaxy catalog with SFR > catalog_threshold")
     parser.add_argument("--catalog_threshold", type=float, default=10, help="Threshold for SFR in the catalog")
 
-    ### Generate mock data with frequency bins if --gen_mock is set otherwise galaxy catalog with SFR > catalog_threshold is created
     parser.add_argument("--side_length", type=float, default=300.0, help="side length in arcsec")
     parser.add_argument("--angular_resolution", type=float, default=30, help="angular resolution in arcsec. Not used if gen_catalog is set.")
     
@@ -78,9 +77,9 @@ def create_mock(args):
         NotImplementedError("Generating both real and redshift space data is not implemented yet.")
 
     ### Load data
-    logm, pos_x, pos_y, redshift_obs, redshift_real = load_lightcone_data(args.input_fname, cosmo=cosmo)
+    mass, pos_x, pos_y, redshift_obs, redshift_real = load_lightcone_data(args.input_fname, cosmo=cosmo)
     
-    logm += np.log10(args.mass_correction_factor)
+    mass *= args.mass_correction_factor
 
     if args.redshift_space:
         print("# Using redshift space")
@@ -89,10 +88,10 @@ def create_mock(args):
         redshift_obs = copy.deepcopy(redshift_real)
 
     ### Mask out small halos
-    mask = (logm > args.logm_min)
+    mask = (np.log10(mass) > args.logm_min)
     mask = mask & (redshift_obs >= args.redshift_min) & (redshift_obs <= args.redshift_max)
     
-    logm = logm[mask]
+    mass = mass[mask]
     pos_x = pos_x[mask]
     pos_y = pos_y[mask]
     redshift_real = redshift_real[mask]
@@ -105,7 +104,7 @@ def create_mock(args):
         ValueError("Please specify the model directory with --model_dir")
         
     else:
-        sfr, pos_galaxies, redshift_real = populate_galaxies_in_lightcone(args, logm, pos, redshift_real, cosmo)
+        sfr, pos_galaxies, redshift_real = populate_galaxies_in_lightcone(args, mass, pos, redshift_real, cosmo)
 
         if args.gen_catalog:
 

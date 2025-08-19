@@ -1,6 +1,6 @@
 #!/bin/bash
 
-gpu_id=0
+gpu_id=1
 
 threshold=1e-3
 
@@ -18,8 +18,10 @@ seed=0
 while [ $seed -lt 1 ]
 do
     input_fname=${base_dir}/TNG300-1/group.${snapshot_number}.txt
-    python3 create_data_cube.py --boxsize 205 --npix 512 --npix_z 512 --threshold $threshold --gpu_id $gpu_id --gen_both --prob_threshold 1e-5 --input_fname $input_fname --output_fname $output_dir/group.${sim_name}.data_cube.${snapshot_number}.threshold${threshold}.${model_name}.seed${seed}.h5 --model_dir $model_dir --max_sfr_file $max_sfr_file --seed $seed
-    
+    python3 create_data_cube.py --boxsize 205 --npix 512 --npix_z 512 --threshold $threshold --gpu_id $gpu_id --gen_both --prob_threshold 1e-5 --input_fname $input_fname --output_fname $output_dir/group.data_cube.${snapshot_number}.threshold${threshold}.${model_name}.seed${seed}.h5 --model_dir $model_dir --max_sfr_file $max_sfr_file --seed $seed
+    #python3 create_data_cube.py --boxsize 205 --npix 512 --npix_z 512 --threshold 1e-1 --gpu_id $gpu_id --gen_both --prob_threshold 1e-5 --input_fname $input_fname --output_fname $output_dir/group.catalog.${snapshot_number}.threshold${threshold}.${model_name}.seed${seed}.txt --model_dir $model_dir --max_sfr_file $max_sfr_file --seed $seed --gen_catalog --catalog_threshold 1e-1
+
+
     ### Piniocchio 
     args_pin="--boxsize 677.4 --npix 846 --npix_z 846 --threshold $threshold --gpu_id $gpu_id --gen_both"
     label_pin=threshold${threshold}.low_res
