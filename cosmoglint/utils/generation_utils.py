@@ -14,7 +14,7 @@ import torch
 
 cspeed = 3e10  # [cm/s]
 
-from .io_utils import normalize
+from .io_utils import normalize, namespace_to_dict
 
 def create_mask(array, threshold): 
     """
@@ -51,6 +51,7 @@ def generate_galaxy(args, x_in, verbose=True):
     ### load Transformer
     with open("{}/args.json".format(args.model_dir), "r") as f:
         opt = json.load(f, object_hook=lambda d: argparse.Namespace(**d))
+        opt.norm_param_dict = namespace_to_dict(opt.norm_param_dict)
 
     model = transformer_model(opt)
     model.load_state_dict(torch.load("{}/model.pth".format(args.model_dir), map_location="cpu"))
@@ -75,7 +76,7 @@ def generate_galaxy(args, x_in, verbose=True):
         max_ids = torch.tensor(max_ids).to(device) # (num_features, )
     
     num_batch = (len(x_in) + opt.batch_size - 1) // opt.batch_size
-    stop_criterion = normalize(args.threshold, opt.output_features[0:1], opt.norm_param_dict) # stop criterion for SFR
+    stop_criterion = normalize(args.threshold, opt.output_features[0], opt.norm_param_dict) # stop criterion for SFR
     generated = []
     for batch_idx in tqdm(range(num_batch)):
         start = batch_idx * opt.batch_size 
@@ -109,6 +110,7 @@ def generate_galaxy_TransNF(args, x_in, verbose=True):
     ### load Transformer
     with open("{}/args.json".format(args.model_dir), "r") as f:
         opt = json.load(f, object_hook=lambda d: argparse.Namespace(**d))
+        opt.norm_param_dict = namespace_to_dict(opt.norm_param_dict)
 
     model, flow = transformer_nf_model(opt)
 

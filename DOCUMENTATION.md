@@ -114,9 +114,9 @@ python train_transformer.py --data_path [data_path] --norm_param_file [norm_para
 
 Important options:
 - `--data_path`: Path(s) to the training data. Data is an hdf5 file that contains properties of halos (`HaloMass`, `NumSubgroups`, `Offset`) and galaxies (`SubgroupSFR`, `SubgroupDist`, `SubgroupVrad`, `SubgroupVtan`), where `NumSubgroups` and `Offset` are used for determining host halos of galaxies. Multiple files can be passed.
-- `--norm_param_file`: Path to the normalization parameter file. The file contains minimum (1st column) and maximum (2nd column) values for the input and output parameters.
-- `--use_dist`: If set, the distance to halo is predicted
-- `--use_vel`: If set, relative velocity to halo is predicted
+- `--norm_param_file`: Path to the json file that specifies the normalization settings. Each key (e.g., `HaloMass`, `subgroupSFR`) maps to a dictionary with `min` / `max` and `norm`. If `norm` is `"log"` or `"log_with_sign"`, the `min` / `max` normalization is applied after the log conversion.
+- `--input_features`: List of the input properties (default: `["HaloMass"]`)
+- `--output_features`: List of the output properties (default: `["SubgroupSFR", "SubgroupDist", "SubgroupVrad", "SubgroupVtan"]`)
 - `--max_length`: Maximum number of galaxies (sequence length) per halo (default: 30).
 
 Other options:
@@ -187,8 +187,8 @@ python create_lightcone.py --input_fname [input_fname] --model_dir [model_dir] -
 Example of `model_config_file`:
 ```json
 {
-  "33": ["transformer1_33_use_vel_ep40_bs512_w0.02", 2.002],
-  "21": ["transformer1_21_use_vel_ep60_bs512_w0.02", 4.008]
+  "33": ["transformer1_33_ep40_bs512_w0.02", 2.002],
+  "21": ["transformer1_21_ep60_bs512_w0.02", 4.008]
 }
 ```
 

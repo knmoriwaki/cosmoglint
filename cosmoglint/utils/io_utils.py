@@ -1,5 +1,5 @@
 import os
-
+from argparse import Namespace
 import random
 import numpy as np
 
@@ -8,6 +8,7 @@ import h5py
 import torch
 
 from torch.utils.data import Dataset
+
 
 def my_save_model(model, fname):
     torch.save(model.state_dict(), fname)
@@ -41,6 +42,14 @@ def save_intensity_data(intensity, args, output_fname):
             f.attrs[key] = value
     print(f"# Data cube saved as {output_fname}")
 
+def namespace_to_dict(ns):
+    if isinstance(ns, Namespace):
+        return {k: namespace_to_dict(v) for k, v in vars(ns).items()}
+    elif isinstance(ns, dict):
+        return {k: namespace_to_dict(v) for k, v in ns.items()}
+    else:
+        return ns
+
 def convert_to_log(val, val_min):
     log_val = np.full_like(val, val_min)
     mask = val > 10**val_min
@@ -53,35 +62,60 @@ def convert_to_log_with_sign(val):
 def inverse_convert_to_log_with_sign(val):
     return np.sign(val) * ( 10 ** np.abs( val ) - 1 )
 
-def normalize(x, keys, norm_param_dict, inverse=False):
+def normalize(x, keys, norm_param_dict, inverse=False, convert=True):
 
-    if x.shape[1] != len(keys):
+    get_item = False
+    squeeze = False
+
+    x = np.array(x)
+
+    if x.ndim == 0:
+        x = x[None, None]
+        get_item = True
+    
+    if x.ndim == 1:
+        x = x[:, None]
+        squeeze = True
+
+    if not isinstance(keys, list):
+        keys = [keys]
+
+    if (len(keys) == 1) and (x.shape[1] != 1):
+        x = x[..., None]
+        squeeze = True
+
+    if x.shape[-1] != len(keys):
         raise ValueError("Input x has shape {}, but expected {} features".format(x.shape, len(keys)))
-
+        
     if norm_param_dict is not None:
-        xmin = np.array([norm_param_dict[key]["min"] for key in keys])
+        xmin = np.array([(norm_param_dict[key])["min"] for key in keys])
         xmax = np.array([norm_param_dict[key]["max"] for key in keys])
         norm_mode = [ norm_param_dict[key]["norm"] for key in keys ]
 
-    else:
-        return x
+        if inverse:
+            x = x * ( xmax - xmin ) + xmin
+            if convert:
+                for i, mode in enumerate(norm_mode):
+                    if mode == "log":
+                        x[...,i] = 10 ** x[..., i]
+                    elif mode == "log_with_sign":
+                        x[...,i] = inverse_convert_to_log_with_sign(x[...,i])
 
-    if inverse:
-        x = x * ( xmax - xmin ) + xmin
-        for i, mode in enumerate(norm_mode):
-            if mode == "log":
-                x[...,i] = 10 ** x[..., i]
-            elif mode == "log_with_sign":
-                x[...,i] = inverse_convert_to_log_with_sign(x[...,i])
+        else:
+            
+            if convert:
+                for i, mode in enumerate(norm_mode):
+                    if mode == "log":
+                        x[...,i] = convert_to_log(x[...,i], xmin[i])    
+                    elif mode == "log_with_sign":
+                        x[...,i] = convert_to_log_with_sign(x[...,i])
+            x = ( x - xmin ) / ( xmax - xmin )
+            
+    if squeeze:
+        x = np.squeeze(x)
 
-    else:
-        for i, mode in enumerate(norm_mode):
-            if mode == "log":
-                x[...,i] = convert_to_log(x[...,i], xmin[i])    
-            elif mode == "log_with_sign":
-                x[...,i] = convert_to_log_with_sign(x[...,i])
-                            
-        x = ( x - xmin ) / ( xmax - xmin )
+    if get_item:
+        x = x.item()
 
     return x
     
