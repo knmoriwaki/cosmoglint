@@ -43,7 +43,7 @@ python train_transformer.py --data_path [data_path] --norm_param_file [norm_para
 
 Options:
 - `--data_path`: Path(s) to the training data. Data is an hdf5 file that contains properties of halos (`HaloMass`, `NumSubgroups`, `Offset`) and galaxies (`SubgroupSFR`, `SubgroupDist`, `SubgroupVrad`, `SubgroupVtan`), where `NumSubgroups` and `Offset` are used for determining host halos of galaxies. Multiple files can be passed.
-- `--norm_param_file`: Path to the normalization parameter file. The file contains minimum (1st column) and maximum (2nd column) values for the input and output parameters.
+- `--norm_param_file`: Path to the json file that specifies the normalization settings. Each key (e.g., `HaloMass`, `subgroupSFR`) maps to a dictionary with `min` / `max` and `norm`. If `norm` is `"log"` or `"log_with_sign"`, the `min` / `max` normalization is applied after the log conversion.
 - `--use_dist`: If set, the distance to halo is predicted
 - `--use_vel`: If set, relative velocity to halo is predicted
 

@@ -100,9 +100,7 @@ def normalize(x, keys, norm_param_dict, inverse=False, convert=True):
                         x[...,i] = 10 ** x[..., i]
                     elif mode == "log_with_sign":
                         x[...,i] = inverse_convert_to_log_with_sign(x[...,i])
-
         else:
-            
             if convert:
                 for i, mode in enumerate(norm_mode):
                     if mode == "log":
@@ -125,7 +123,7 @@ def load_halo_data(
         output_features = ["SubgroupSFR", "SubgroupDist", "SubgroupVrad", "SubgroupVtan", "SubgroupStellarMass"],
         max_length=10, 
         norm_param_dict=None, 
-        sort=False,
+        sort=True,
         ndata=None, 
     ):
         
@@ -205,7 +203,7 @@ class MyDataset(Dataset):
             output_features = ["SubgroupSFR", "SubgroupDist", "SubgroupVrad", "SubgroupVtan"], #, "SubgroupStellarMass"],
             max_length=10, 
             norm_param_dict=None, 
-            sort=False,
+            sort=True,
             ndata=None, 
         ):
         

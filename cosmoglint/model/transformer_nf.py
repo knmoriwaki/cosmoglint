@@ -24,7 +24,7 @@ def transformer_nf_model(args, **kwargs):
     else:
         raise ValueError(f"Invalid model: {args.model_name}")
     
-    model = model_class(num_condition=1, d_model=args.d_model, num_layers=args.num_layers, num_heads=args.num_heads, max_length=args.max_length, num_features_in=args.num_features, num_features_out=args.num_context, last_activation=nn.Tanh(), pred_prob=False, **kwargs)
+    model = model_class(num_condition=args.num_features_cond, d_model=args.d_model, num_layers=args.num_layers, num_heads=args.num_heads, max_length=args.max_length, num_features_in=args.num_features, num_features_out=args.num_context, last_activation=nn.Tanh(), pred_prob=False, **kwargs)
 
     ### Flow model ###
     transforms = []

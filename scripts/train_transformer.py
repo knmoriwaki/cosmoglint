@@ -63,6 +63,7 @@ def train_model(args):
     print("# Using device: {}".format(device))
 
     ### Define model
+    args.num_features_cond = len(args.input_features)
     args.num_features_in = len(args.output_features)
     
     model = transformer_model(args)

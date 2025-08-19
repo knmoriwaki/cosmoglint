@@ -68,7 +68,7 @@ def train_model(args):
     device = torch.device(f"cuda:{args.gpu_id}" if torch.cuda.is_available() else "cpu")
 
     ### Load model
-    args.num_condition = len(input_features)
+    args.num_features_cond = len(input_features)
     args.num_features = len(output_features)
 
     model, flow = transformer_nf_model(args)
