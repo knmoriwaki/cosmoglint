@@ -11,7 +11,7 @@ import torch
 from torch.utils.data import DataLoader, WeightedRandomSampler
 from torch.utils.data import random_split
 
-from cosmoglint.utils import MyDataset, my_load_model, my_save_model
+from cosmoglint.utils import MyDataset
 from cosmoglint.model import transformer_nf_model, my_stop_predictor, calculate_transformer_nf_loss
 
 def parse_args():
@@ -101,8 +101,8 @@ def train_model(args):
     model, flow = transformer_nf_model(args)
     
     if args.load_epoch > 0:
-        my_load_model(model, f"{args.output_dir}/model_ep{args.load_epoch}.pth")
-        my_load_model(flow, f"{args.output_dir}/flow_ep{args.load_epoch}.pth")
+        model.load_state_dict(torch.load(f"{args.output_dir}/model_ep{args.load_epoch}.pth", map_location="cpu"))
+        flow.load_state_dict(torch.load(f"{args.output_dir}/flow_ep{args.load_epoch}.pth", map_location="cpu"))
         
     model.to(device)
     flow.to(device)
