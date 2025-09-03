@@ -41,6 +41,7 @@ def parse_args():
     parser.add_argument("--sampler_weight_min", type=float, default=1, help="Minimum weight for the sampler, set to 1 to disable sampling")
     parser.add_argument("--lambda_penalty_loss", type=float, default=0, help="Coefficient for the penalty loss")
     parser.add_argument("--save_freq", type=int, default=100)
+    parser.add_argument("--exclude_ratio", type=float, default=0.0, help="Exclude halos in the corner of a size (exclude_ratio * BoxSize)^3")
 
     # model parameters
     parser.add_argument("--model_name", type=str, default="transformer1")
@@ -74,7 +75,7 @@ def train_model(args):
     with open(args.norm_param_file) as f:
         norm_param_dict = json.load(f)
 
-    dataset = MyDataset(args.data_path, input_features=args.input_features, output_features=args.output_features, max_length=args.max_length, norm_param_dict=norm_param_dict)
+    dataset = MyDataset(args.data_path, input_features=args.input_features, output_features=args.output_features, max_length=args.max_length, norm_param_dict=norm_param_dict, exclude_ratio=args.exclude_ratio)
     train_size = int(args.train_ratio * len(dataset))
     val_size = len(dataset) - train_size
     train_dataset, val_dataset = random_split(dataset, [train_size, val_size])

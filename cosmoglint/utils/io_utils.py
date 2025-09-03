@@ -124,7 +124,9 @@ def load_halo_data(
         max_length=10, 
         norm_param_dict=None, 
         sort=True,
-        ndata=None, 
+        ndata=None,
+        exclude_ratio=0.0, 
+        use_excluded_region=False,
     ):
         
     def load_values(f, key):
@@ -153,6 +155,22 @@ def load_halo_data(
         source = np.stack(source_list, axis=1)  # (N, num_features_in)
         source = normalize(source, input_features, norm_param_dict)
         mask = ( source[:, 0] > 0 )
+
+        if exclude_ratio > 0:
+            boxsize = f.attrs["BoxSize"] # [Mpc/h]
+            halo_pos = f["HaloPos"][:] / 1e3 # [Mpc/h]
+
+            mask_exclude = (halo_pos[:,0] > boxsize * (1.-exclude_ratio)) \
+                        & (halo_pos[:,1] > boxsize * (1.-exclude_ratio)) \
+                        & (halo_pos[:,2] > boxsize * (1.-exclude_ratio))
+
+            if use_excluded_region:
+                print("# Using excluded region of size ({} * BoxSize)^3".format(exclude_ratio))
+                mask = mask & mask_exclude
+            else:
+                print("# Exclude halos in the corner of size ({} * BoxSize)^3".format(exclude_ratio))
+                print("# The excluded region is {:.2f} % of the entire volume".format(100.0 * (exclude_ratio**3)))
+                mask = mask & (~mask_exclude)
 
         target_list = []
         for feature in output_features:
@@ -205,6 +223,8 @@ class MyDataset(Dataset):
             norm_param_dict=None, 
             sort=True,
             ndata=None, 
+            exclude_ratio=0.0,
+            use_excluded_region=False,
         ):
         
         if not isinstance(path, list):
@@ -214,7 +234,7 @@ class MyDataset(Dataset):
         self.y = []
 
         for p in path:
-            x_tmp, y_tmp = load_halo_data(p, input_features=input_features, output_features=output_features, max_length=max_length, norm_param_dict=norm_param_dict, sort=sort, ndata=ndata)
+            x_tmp, y_tmp = load_halo_data(p, input_features=input_features, output_features=output_features, max_length=max_length, norm_param_dict=norm_param_dict, sort=sort, ndata=ndata, exclude_ratio=exclude_ratio, use_excluded_region=use_excluded_region)
             self.x = torch.cat([self.x, x_tmp], dim=0)
             self.y = self.y + y_tmp
 
