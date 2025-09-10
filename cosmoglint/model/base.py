@@ -15,7 +15,7 @@ class TransformerBase(nn.Module):
         self.num_features_in = num_features_in
         self.num_features_out = num_features_out
 
-    def forward(self, context, x):
+    def forward(self, context, x, global_cond=None):
         raise NotImplementedError("forward method not implemented")
 
     def generate_square_subsequent_mask(self, sz):
@@ -27,8 +27,7 @@ class TransformerBase(nn.Module):
         zero_tensor = torch.tensor(0.0).to(x.device)
         return torch.where(mask, zero_tensor, x)
 
-    
-    def generate(self, context, seq=None, teacher_forcing_ratio=0.0, temperature=1.0, stop_criterion=None, prob_threshold=0, cutoff=True, max_ids=None, buffer_percent=0.05):
+    def generate(self, context, global_cond=None, seq=None, teacher_forcing_ratio=0.0, temperature=1.0, stop_criterion=None, prob_threshold=0, cutoff=True, max_ids=None, buffer_percent=0.05):
         # context: (batch, num_condition)
         batch_size = len(context)
 
@@ -49,7 +48,7 @@ class TransformerBase(nn.Module):
             if seq is not None and t < seq.size(1) and random.random() < teacher_forcing_ratio:
                 next_token = seq[:, t]
             else:
-                x = self(context, generated[:, :t]) # generated[:, :t]: (batch, t, num_features_in)
+                x = self(context, generated[:, :t], global_cond=global_cond) # generated[:, :t]: (batch, t, num_features_in)
                 # (batch, t+1, num_faetures_in, num_features_out)
                 
                 x_last = x[:, -1, :, :] 
@@ -145,7 +144,7 @@ class Transformer1(TransformerBase): # add logM at first in the sequence
         self.out_activation = last_activation
         
 
-    def forward(self, context, x):
+    def forward(self, context, x, global_cond=None):
         # context: (batch, num_condition)
         # x: (batch, seq_length, num_features_in)
         
@@ -209,7 +208,7 @@ class Transformer2(TransformerBase): # embed context, position, and x together
 
         self.out_activation = last_activation
     
-    def forward(self, context, x):
+    def forward(self, context, x, global_cond=None):
         # context: (batch, num_condition)
         # x: (batch, seq_length, num_features_in)
 
@@ -275,7 +274,7 @@ class Transformer3(TransformerBase): # embed x and context together and then add
 
         self.out_activation = last_activation
     
-    def forward(self, context, x):
+    def forward(self, context, x, global_cond=None):
         # context: (batch, num_condition)
         # x: (batch, seq_length, num_features_in)
 
@@ -314,6 +313,36 @@ class Transformer3(TransformerBase): # embed x and context together and then add
         x = self.out_activation(x)
 
         return x
+    
+
+class TransformerWithGlobalCond(nn.Module): 
+    def __init__(self, num_features_global, transformer_cls=Transformer1, num_condition=1, d_model=128, num_layers=4, num_heads=8, max_length=10, num_features_in=1, num_features_out=1, dropout=0, last_activation=nn.Softmax(dim=-1), pred_prob=True):
+        super().__init__()
+
+        self.transformer = transformer_cls(
+            num_condition = num_condition + num_features_global,
+            d_model = d_model, 
+            num_layers = num_layers, 
+            num_heads = num_heads, 
+            max_length = max_length, 
+            num_features_in = num_features_in, 
+            num_features_out = num_features_out, 
+            dropout = dropout, 
+            last_activation = last_activation, 
+            pred_prob = pred_prob
+        )
+        
+    def forward(self, context, x, global_cond):
+        if len(context.shape) == 1:
+            context = context.unsqueeze(-1)
+        ctx = torch.cat([context, global_cond], dim=1)
+        return self.transformer(ctx, x)
+    
+    def generate(self, context, global_cond, **kwargs):
+        if len(context.shape) == 1:
+            context = context.unsqueeze(-1)
+        ctx = torch.cat([context, global_cond], dim=1)
+        return self.transformer.generate(ctx, **kwargs)
 
     
 from typing import Optional

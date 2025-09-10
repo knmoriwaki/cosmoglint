@@ -2,10 +2,13 @@ import os
 from argparse import Namespace
 import random
 import numpy as np
+import pandas as pd
 
 import h5py
 
 import torch
+
+from tqdm import tqdm
 
 from torch.utils.data import Dataset
 
@@ -63,6 +66,20 @@ def inverse_convert_to_log_with_sign(val):
     return np.sign(val) * ( 10 ** np.abs( val ) - 1 )
 
 def normalize(x, keys, norm_param_dict, inverse=False, convert=True):
+    """
+    x: array-like, shape (N,) or (N, num_features)
+    keys: list of str
+    norm_param_dict: dict
+        e.g., {
+            "HaloMass": {"min": 10, "max": 15, "norm": "log"},
+            "GroupPosX": {"min": 0, "max": 205000, "norm": "linear"},
+            ...
+        }
+    inverse: bool
+        If True, perform inverse normalization.
+    convert: bool
+        If True, convert to/from log scale based on norm_param_dict.
+    """
 
     get_item = False
     squeeze = False
@@ -74,8 +91,12 @@ def normalize(x, keys, norm_param_dict, inverse=False, convert=True):
         get_item = True
     
     if x.ndim == 1:
-        x = x[:, None]
+        if len(keys) == 1:
+            x = x[:, None]
+        else:
+            x = x[None, :]
         squeeze = True
+
 
     if not isinstance(keys, list):
         keys = [keys]
@@ -116,13 +137,38 @@ def normalize(x, keys, norm_param_dict, inverse=False, convert=True):
         x = x.item()
 
     return x
+
+def load_global_params(global_param_file, global_features, norm_param_dict=None):
+
+    if global_features is None:
+        global_params = None
+
+    else:
+        if global_param_file is None:
+            raise ValueError("global_param_file must be specified when global_features is provided.")
+        
+        if not isinstance(global_param_file, list):
+            global_param_file = [global_param_file]
+
+        global_params = []
+        for f in global_param_file:
+            global_params_pd = pd.read_csv(f, sep=r"\s+")
+            global_params_now = global_params_pd[global_features].to_numpy(dtype=np.float32)
+            
+            global_params.append(global_params_now)
+
+        global_params = np.vstack(global_params)
+
+        global_params = normalize(global_params, global_features, norm_param_dict)        
+
+    return global_params # (ndata, num_features_global)
     
 def load_halo_data(
         file_path, 
-        input_features = ["HaloMass"], # ["HaloMass", "HaloLocalDensity"],
-        output_features = ["SubgroupSFR", "SubgroupDist", "SubgroupVrad", "SubgroupVtan", "SubgroupStellarMass"],
-        max_length=10, 
+        input_features,
+        output_features,
         norm_param_dict=None, 
+        max_length=10, 
         sort=True,
         ndata=None,
         exclude_ratio=0.0, 
@@ -144,7 +190,6 @@ def load_halo_data(
     num_features_in = len(input_features)
     num_features_out = len(output_features)
 
-    print(f"# Loading halo data from {file_path}")
     with h5py.File(file_path, "r") as f:
 
         source_list = []
@@ -157,8 +202,8 @@ def load_halo_data(
         mask = ( source[:, 0] > 0 )
 
         if exclude_ratio > 0:
-            boxsize = f.attrs["BoxSize"] # [Mpc/h]
-            halo_pos = f["HaloPos"][:] / 1e3 # [Mpc/h]
+            boxsize = f.attrs["BoxSize"] # [kpc/h]
+            halo_pos = f["GroupPos"][:]  # [kpc/h]
 
             mask_exclude = (halo_pos[:,0] > boxsize * (1.-exclude_ratio)) \
                         & (halo_pos[:,1] > boxsize * (1.-exclude_ratio)) \
@@ -180,16 +225,17 @@ def load_halo_data(
         target = np.stack(target_list, axis=1)  # (N, num_features_out)
         target = normalize(target, output_features, norm_param_dict)
 
-        num_subgroups = f["NumSubgroups"][:]
-        offset = f["Offset"][:]
-        
+        num_subgroups = f["GroupNsubs"][:]
+
+        offset = 0
         y_list = []
         for j in range(len(source)):
             if not mask[j]:
                 continue
 
-            start = offset[j]
+            start = offset
             end = start + num_subgroups[j]
+            offset = end
             
             if num_subgroups[j] == 0:
                 y_j = np.zeros((1, num_features_out)) # handle empty subgroups
@@ -216,27 +262,53 @@ def load_halo_data(
 class MyDataset(Dataset):
     def __init__(
             self, 
-            path, 
-            input_features = ["HaloMass"], # ["HaloMass", "HaloLocalDensity"],
-            output_features = ["SubgroupSFR", "SubgroupDist", "SubgroupVrad", "SubgroupVtan"], #, "SubgroupStellarMass"],
-            max_length=10, 
+            path,  
+            input_features,
+            output_features, 
+            global_params=None,
             norm_param_dict=None, 
+            max_length=10, 
             sort=True,
             ndata=None, 
             exclude_ratio=0.0,
             use_excluded_region=False,
         ):
-        
+            
         if not isinstance(path, list):
             path = [path]
 
+        if global_params is not None:
+            if len(global_params) != len(path):
+                raise ValueError("The number of global parameter sets must match the number of data files")
+
         self.x = torch.empty((0, len(input_features)), dtype=torch.float32)
         self.y = []
+        self.g = []
 
-        for p in path:
-            x_tmp, y_tmp = load_halo_data(p, input_features=input_features, output_features=output_features, max_length=max_length, norm_param_dict=norm_param_dict, sort=sort, ndata=ndata, exclude_ratio=exclude_ratio, use_excluded_region=use_excluded_region)
+        if len(path) < 20:
+            verbose = True 
+        else:
+            verbose = False
+            print("# Loading halo data from {} to {} ({} files)".format(path[0], path[-1], len(path)))
+
+        for i, p in tqdm(enumerate(path)):
+            if verbose:
+                print(f"# Loading halo data from {p}")
+    
+            x_tmp, y_tmp = load_halo_data(p, input_features, output_features, norm_param_dict=norm_param_dict, max_length=max_length, sort=sort, ndata=ndata, exclude_ratio=exclude_ratio, use_excluded_region=use_excluded_region)
             self.x = torch.cat([self.x, x_tmp], dim=0)
             self.y = self.y + y_tmp
+
+            if global_params is not None:
+                global_param = global_params[i]
+                g_tmp = np.repeat(global_param[None, :], len(x_tmp), axis=0) # (Nhalo, num_features_global)
+            else:
+                g_tmp = np.zeros((len(x_tmp), 1)) # dummy (Nhalo, 1)
+            
+            self.g.append( g_tmp )
+
+        self.g = np.vstack(self.g) 
+        self.g = torch.tensor(self.g, dtype=torch.float32)
 
         _, num_params = (self.y[0]).shape
 
@@ -253,7 +325,7 @@ class MyDataset(Dataset):
         return len(self.x)
 
     def __getitem__(self, idx):
-        return self.x[idx], self.y_padded[idx], self.mask[idx]
+        return self.x[idx], self.y_padded[idx], self.g[idx], self.mask[idx]
     
 def load_lightcone_data(input_fname, cosmo):
     print(f"# Load {input_fname}")

@@ -10,7 +10,7 @@ from tqdm import tqdm
 
 import numpy as np
 
-import numpy as np
+import pandas as pd
 
 import torch
 
@@ -35,6 +35,8 @@ def parse_args():
     ### I/O parameters
     parser.add_argument("--input_fname", type=str, default=None, help="Input filename")
     parser.add_argument("--output_fname", type=str, default="test.h5", help="Output filename")
+    parser.add_argument("--global_param_file", type=str, default=None, help="File containing global parameters")
+    parser.add_argument("--global_param_id", type=int, default=0, help="Row ID in the global parameter file")
 
     parser.add_argument("--boxsize", type=float, default=100.0, help="Box size [Mpc/h]")
 
@@ -91,6 +93,13 @@ def create_data(args):
         mass = mycat.data["Mass"] / hlittle # [Msun]
         pos = mycat.data["pos"]
         vel = mycat.data["vel"]
+    
+    elif args.input_fname.endswith(".hdf5") or args.input_fname.endswith(".h5"):
+        with h5py.File(args.input_fname, "r") as f:
+            redshift = f.attrs["Redshift"]
+            mass = f["GroupMass"][:] # [Msun]
+            pos = f["GroupPos"][:] # [Mpc/h]
+            vel = f["GroupVel"][:]
 
     else:
         with open(args.input_fname, "r") as f:
@@ -105,6 +114,13 @@ def create_data(args):
         vel = data[:, 4:7]
 
     mass *= args.mass_correction_factor
+
+    # Load global parameters
+    if args.global_param_file is not None:
+        global_params = pd.read_csv(args.global_param_file, sep=r"\s+")
+        global_params = global_params.iloc[args.global_param_id]
+    else:
+        global_params = None
 
     ### Mask out small halos
     print("# Minimum log mass in catalog [Msun]: {:.5f}".format(np.min(np.log10(mass))))
@@ -167,7 +183,7 @@ def create_data(args):
 
     else:
         
-        sfr, pos_galaxies_real, pos_galaxies = populate_galaxies_in_cube(args, mass, pos, vel, redshift, cosmo)
+        sfr, pos_galaxies_real, pos_galaxies = populate_galaxies_in_cube(args, mass, pos, vel, redshift, cosmo, global_params=global_params)
 
         if args.gen_both:
             pos_list = [pos_galaxies_real, pos_galaxies]

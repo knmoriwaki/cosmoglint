@@ -113,18 +113,21 @@ python train_transformer.py --data_path [data_path] --norm_param_file [norm_para
 ```
 
 Important options:
-- `--data_path`: Path(s) to the training data. Data is an hdf5 file that contains properties of halos (`HaloMass`, `NumSubgroups`, `Offset`) and galaxies (`SubgroupSFR`, `SubgroupDist`, `SubgroupVrad`, `SubgroupVtan`), where `NumSubgroups` and `Offset` are used for determining host halos of galaxies. Multiple files can be passed.
-- `--norm_param_file`: Path to the json file that specifies the normalization settings. Each key (e.g., `HaloMass`, `subgroupSFR`) maps to a dictionary with `min` / `max` and `norm`. If `norm` is `"log"` or `"log_with_sign"`, the `min` / `max` normalization is applied after the log conversion.
-- `--input_features`: List of the input properties (default: `["HaloMass"]`)
-- `--output_features`: List of the output properties (default: `["SubgroupSFR", "SubgroupDist", "SubgroupVrad", "SubgroupVtan"]`)
+- `--data_path`: Path(s) to the training data. Data is an hdf5 file that contains properties of halos and galaxies. In addition to those for input and output features, the number of galaxies in each halo (`GroupNsubs`) should be provided. Multiple files can be passed.
+- `--norm_param_file`: Path to the json file that specifies the normalization settings. Each key (e.g., `HaloMass`) maps to a dictionary with `min` / `max` and `norm`. If `norm` is `"log"` or `"log_with_sign"`, the `min` / `max` normalization is applied after the log conversion.
+- `--input_features`: List of the input properties (default: `["GroupMass"]`)
+- `--output_features`: List of the output properties (default: `["SubhaloSFR", "SubhaloDist", "SubhaloVrad", "SubhaloVtan"]`)
 - `--max_length`: Maximum number of galaxies (sequence length) per halo (default: 30).
 
 Other options:
 - `--gpu_id`: ID of the GPU to use (default: "0"). Accepts string values like "0", "1", etc.
 - `--seed`: Random seed for reproducibility (default: 12345).
 - `--output_dir`: Directory where outputs (e.g., model checkpoints, logs) will be saved (default: "output").
+- `--global_features`: List of global properties. If not None, `global_param_file` should be provided (default: None)
+- `--global_param_file`: Path to the global parameters file(s). The header should include `global_features`. (default: None)
 
 - `--train_ratio`: Fraction of the data to use for training (the rest is used for validation). Default is 0.9.
+- `--exclude_ratio`: The cubic region whose side length is `BoxSize` multiplied by this ratio is not used for training. `BoxSize` and `GroupPos` should be provided in the data file if a positive ratio is set.
 - `--batch_size`: Number of halo sequences per batch (default: 128).
 - `--num_epochs`: Number of training epochs (default: 2).
 - `--lr`: Learning rate for the optimizer (default: 1e-3).

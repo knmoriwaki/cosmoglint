@@ -37,7 +37,7 @@ def create_mask(array, threshold):
 
     return mask
 
-def generate_galaxy(args, x_in, verbose=True):
+def generate_galaxy(args, x_in, global_params=None, verbose=True):
     """
     args: args.gpu_id, args.model_dir, args.threshold, and args.max_sfr_file are used
     x_in: (num_halos, num_features_in); halo properties
@@ -67,6 +67,11 @@ def generate_galaxy(args, x_in, verbose=True):
     x_in = normalize(x_in, opt.input_features, opt.norm_param_dict)
     x_in = torch.from_numpy(x_in).float().to(device)
 
+    if global_params is not None:
+        global_params = global_params[opt.global_features].to_numpy(dtype=np.float32)
+        global_params = normalize(global_params, opt.global_features, opt.norm_param_dict)
+        global_params = torch.tensor(np.array(global_params), dtype=torch.float32).to(device)
+
     if args.max_sfr_file is None:
         print("# No max SFR file provided, using default max IDs")
         max_ids = None
@@ -81,8 +86,9 @@ def generate_galaxy(args, x_in, verbose=True):
     for batch_idx in tqdm(range(num_batch)):
         start = batch_idx * opt.batch_size 
         x_batch = x_in[start: start + opt.batch_size] # (batch_size, num_features)
+        global_cond_batch = global_params.unsqueeze(0).repeat(len(x_batch), 1) if global_params is not None else None # (batch_size, num_global_features)
         with torch.no_grad():
-            generated_batch, _ = model.generate(x_batch, prob_threshold=1e-5, stop_criterion=stop_criterion, max_ids=max_ids) # (batch_size, seq_length, num_features)
+            generated_batch, _ = model.generate(x_batch, global_cond=global_cond_batch, prob_threshold=1e-5, stop_criterion=stop_criterion, max_ids=max_ids) # (batch_size, seq_length, num_features)
             
         generated.append(generated_batch.cpu().detach().numpy())
     generated = np.concatenate(generated, axis=0) # (num_halos, seq_length, num_features)
@@ -95,7 +101,7 @@ def generate_galaxy(args, x_in, verbose=True):
     
     return generated, mask
 
-def generate_galaxy_TransNF(args, x_in, verbose=True):
+def generate_galaxy_TransNF(args, x_in, global_params=None, verbose=True):
     """
     args: args.gpu_id, args.model_dir, and args.threshold are used
     x_in: (num_halos, num_features_in), halo properties
@@ -132,6 +138,11 @@ def generate_galaxy_TransNF(args, x_in, verbose=True):
     
     x_in = normalize(x_in, opt.input_features, opt.norm_param_dict)
     x_in = torch.from_numpy(x_in).float().to(device)
+
+    if global_params is not None:
+        global_params = global_params[opt.global_features].to_numpy(dtype=np.float32)
+        global_params = normalize(global_params, opt.global_features, opt.norm_param_dict)
+        global_params = torch.from_numpy(global_params).float().to(device)
     
     num_batch = (len(x_in) + opt.batch_size - 1) // opt.batch_size
     generated = []
@@ -142,7 +153,8 @@ def generate_galaxy_TransNF(args, x_in, verbose=True):
     for batch_idx in tqdm(range(num_batch)):
         start = batch_idx * opt.batch_size 
         x_batch = x_in[start: start + opt.batch_size] # (batch_size, 1)
-        generated_batch = generate_with_transformer_nf(model, flow, x_batch, stop_criterion=stop_criterion) # (batch_size, max_length, num_features)
+        global_cond_batch = global_params.unsqueeze(0).repeat(len(x_batch), 1) if global_params is not None else None
+        generated_batch = generate_with_transformer_nf(model, flow, x_batch, global_cond=global_cond_batch, stop_criterion=stop_criterion) # (batch_size, max_length, num_features)
         generated.append(generated_batch)
     generated = torch.cat(generated, dim=0) # (num_halos, max_length, num_features)
     generated = generated.cpu().detach().numpy()
@@ -158,12 +170,12 @@ def generate_galaxy_TransNF(args, x_in, verbose=True):
     
     return generated, mask
 
-def populate_galaxies_in_cube(args, x_in, pos, vel, redshift, cosmo):
+def populate_galaxies_in_cube(args, x_in, pos, vel, redshift, cosmo, global_params=None):
     
     if "Transformer_NF" in args.model_dir:
-        generated, mask = generate_galaxy_TransNF(args, x_in)
+        generated, mask = generate_galaxy_TransNF(args, x_in, global_params=global_params)
     else:
-        generated, mask = generate_galaxy(args, x_in)
+        generated, mask = generate_galaxy(args, x_in, global_params=global_params)
 
     seq_length = mask.shape[1]
     num_features = generated.shape[-1]
@@ -219,7 +231,7 @@ def populate_galaxies_in_cube(args, x_in, pos, vel, redshift, cosmo):
 
     return sfr, pos_galaxies_real, pos_galaxies
 
-def populate_galaxies_in_lightcone(args, x_in, pos, redshift, cosmo):
+def populate_galaxies_in_lightcone(args, x_in, pos, redshift, cosmo, global_params=None):
     """
     args: args.gpu_id, args.model_dir, args.model_config_file, args.args.threshold, and args.param_dir are used
     x_in: (num_halos, )
@@ -268,9 +280,9 @@ def populate_galaxies_in_lightcone(args, x_in, pos, redshift, cosmo):
         opt.max_sfr_file = max_sfr_file_list[i]
 
         if "Transformer_NF" in opt.model_dir:
-            generated, mask = generate_galaxy_TransNF(opt, x_now, verbose=False)
+            generated, mask = generate_galaxy_TransNF(opt, x_now, global_params=global_params, verbose=False)
         else:
-            generated, mask = generate_galaxy(opt, x_now, verbose=False)
+            generated, mask = generate_galaxy(opt, x_now, global_params=global_params, verbose=False)
             
         seq_length = mask.shape[1]
         num_features = generated.shape[-1]

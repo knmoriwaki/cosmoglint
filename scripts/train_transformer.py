@@ -13,7 +13,7 @@ from torch.utils.data import random_split
 from torch.distributions import Beta
 import torch.nn.functional as F
 
-from cosmoglint.utils import MyDataset
+from cosmoglint.utils import MyDataset, load_global_params
 from cosmoglint.model import transformer_model
 
 def parse_args():
@@ -26,13 +26,17 @@ def parse_args():
     parser.add_argument("--seed", type=int, default=12345)
 
     parser.add_argument("--max_length", type=int, default=30)
-    parser.add_argument("--input_features", type=str, nargs='+', default=["HaloMass"])
-    parser.add_argument("--output_features", type=str, nargs='+', default=["SubgroupSFR", "SubgroupDist", "SubgroupVrad", "SubgroupVtan"])
 
+    parser.add_argument("--input_features", type=str, nargs='+', default=["GroupMass"])
+    parser.add_argument("--output_features", type=str, nargs='+', default=["SubhaloSFR", "SubhaloDist", "SubhaloVrad", "SubhaloVtan"])
+    parser.add_argument("--global_features", type=str, nargs='+', default=None)
+
+    # dataset parameters
+    parser.add_argument("--data_path", type=str, nargs='+', default=["data.h5"], help="Path to the data file(s). If the first file contains '*', indices will be used to specify the files, and other files will be ignored.")
+    parser.add_argument("--indices", type=str, default=None, help="e.g., 0-999. Only used when data_path contains *.")
     parser.add_argument("--norm_param_file", type=str, default="./norm_params.json")
+    parser.add_argument("--global_param_file", type=str, nargs='+', default=None, help="Path to the global parameters file(s). If not None, the number of files must match that of data_path.")
 
-    # training parameters
-    parser.add_argument("--data_path", type=str, nargs='+', default=["data.h5"])
     parser.add_argument("--train_ratio", type=float, default=0.9)
     parser.add_argument("--batch_size", type=int, default=128)
     parser.add_argument("--num_epochs", type=int, default=2)
@@ -63,9 +67,13 @@ def train_model(args):
     device = torch.device("cuda:{}".format(args.gpu_id) if torch.cuda.is_available() else "cpu")
     print("# Using device: {}".format(device))
 
-    ### Define model
+    for k, v in vars(args).items():
+        print(f"{k}: {v}")
+
+    ### Define model   
     args.num_features_cond = len(args.input_features)
     args.num_features_in = len(args.output_features)
+    args.num_features_global = 0 if args.global_features is None else len(args.global_features)
     
     model = transformer_model(args)
     model.to(device)
@@ -74,8 +82,25 @@ def train_model(args):
     ### Load data
     with open(args.norm_param_file) as f:
         norm_param_dict = json.load(f)
+    
+    global_params = load_global_params(args.global_param_file, args.global_features, norm_param_dict=norm_param_dict)
+    
+    if "*" in args.data_path[0] and args.indices is not None:
+        # Currently only support one data path with *
+        if len(args.data_path) > 1:
+            raise ValueError("When data_path contains *, only one data path is allowed.")
+        
+        indices = args.indices.split("-")
+        istart = int(indices[0])
+        iend = int(indices[1])
+        print(f"# Using data files from {istart} to {iend}")
+        args.data_path = [ args.data_path[0].replace("*", str(i)) for i in range(istart, iend+1) ]
+        
+        if global_params is not None:
+            global_params = global_params[istart:iend+1, :]
 
-    dataset = MyDataset(args.data_path, input_features=args.input_features, output_features=args.output_features, max_length=args.max_length, norm_param_dict=norm_param_dict, exclude_ratio=args.exclude_ratio)
+        
+    dataset = MyDataset(args.data_path, args.input_features, args.output_features, global_params=global_params, norm_param_dict=norm_param_dict, max_length=args.max_length, exclude_ratio=args.exclude_ratio)
     train_size = int(args.train_ratio * len(dataset))
     val_size = len(dataset) - train_size
     train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
@@ -166,9 +191,10 @@ def train_model(args):
         for epoch in tqdm(range(args.num_epochs), file=sys.stderr):
             model.train()
 
-            for count, (context, seq, mask) in enumerate(train_dataloader):
+            for count, (context, seq, global_cond, mask) in enumerate(train_dataloader):
                 context = context.to(device)  # (batch, num_condition)   
                 seq = seq.to(device)     # (batch, max_length, num_features_in)
+                global_cond = None if global_cond is None else global_cond.to(device) # (batch, num_features_global)
                 mask = mask.to(device)   # (batch, max_length)
                 #weight = (6.7 * context[:,0]).pow(10).detach()
                 #weight = weight / weight.mean()
@@ -176,7 +202,7 @@ def train_model(args):
                 optimizer.zero_grad()
 
                 input_seq = seq[:, :-1]
-                output = model(context, input_seq) # (batch, max_length, num_features_in, num_features_out)
+                output = model(context, input_seq, global_cond=global_cond) # (batch, max_length, num_features_in, num_features_out)
                 #_, output = model.generate(context, seq=seq, teacher_forcing_ratio=teacher_forcing_ratio) 
                 # output: (batch, max_length, num_features_in, num_features_out)
                 
@@ -190,15 +216,16 @@ def train_model(args):
                 optimizer.step()
 
                 model.eval()
-                for context_val, seq_val, mask_val in val_dataloader:
+                for context_val, seq_val, global_cond_val, mask_val in val_dataloader:
                     with torch.no_grad():
                         context_val = context_val.to(device)
                         seq_val = seq_val.to(device)
+                        global_cond_val = None if global_cond_val is None else global_cond_val.to(device)
                         mask_val = mask_val.to(device)
                         #weight = (6.7 * context_val[:,0]).pow(10).detach()
                         
                         input_seq_val = seq_val[:, :-1]
-                        output_val = model(context_val, input_seq_val)
+                        output_val = model(context_val, input_seq_val, global_cond=global_cond_val)
                         loss_val = loss_func(output_val, seq_val, mask_val)
 
                         if args.lambda_penalty_loss > 0:
