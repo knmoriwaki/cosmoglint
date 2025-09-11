@@ -288,3 +288,55 @@ def show_map(frequency, intensity, intensity_line, side_length, lines_to_show=[]
             count += 1
         else:
             print(f"Warning: {line_name} not found in intensity_line, skipping...")
+
+
+def plot_logy_with_sign(x, y, ax, pow_ymin=-2, logy_pos=None, color="k", ls="solid", lw=1.5, label="", alpha=1):
+    ax.set_yscale("linear")
+
+    if logy_pos is not None:
+        logy_pos_char = ["{"+str(b)+"}" for b in logy_pos]
+        labels = [r"$-10^{}$".format(b) for b in reversed(logy_pos_char)] + [r"$0$"] + [r"$10^{}$".format(b) for b in logy_pos_char ]
+        ticks = [ - b + pow_ymin for b in reversed(logy_pos) ] + [0] + [ b - pow_ymin for b in logy_pos ]
+        ax.set_yticks(ticks)
+        ax.set_yticklabels(labels)
+
+    _y = []
+    for b in y:
+        if b > 10**pow_ymin:
+            _y.append( np.log10( b ) - pow_ymin )
+        elif b < -10**pow_ymin:
+            _y.append( - np.log10( -b ) + pow_ymin )
+        else:
+            _y.append(0)
+    ax.plot(x, _y, ls = ls, color=color, lw=lw, alpha=alpha, label=label)
+    
+
+def calc_ecp(x_true, y_true, alpha, sample_func, y_ref=None, Ngen=1000):
+    Nsim = len(x_true)
+    Nalpha = len(alpha)
+
+    if isinstance(y_true, torch.Tensor):
+        y_true = y_true.detach().cpu().numpy()
+    if isinstance(y_ref, torch.Tensor):
+        y_ref = y_ref.detach().cpu().numpy()
+
+    ecp = np.zeros(Nalpha)
+    for i in tqdm(range(Nsim)):
+
+        tmp_x = x_true[i].unsqueeze(0).expand(Ngen,-1)
+        
+        theta_ij = sample_func(tmp_x) # generated (Ngen, seq_length, num_params)
+        if isinstance(theta_ij, torch.Tensor):
+            theta_ij = theta_ij.detach().cpu().numpy()
+            
+        theta_i = y_true[i] # true (seq_length, num_params)
+        theta_r = y_ref[i] # reference point (seq_length, num_params)
+
+        d1 = np.sum((theta_ij - theta_r)**2, axis=(1, 2)) # (Ngen, )
+        d2 = np.sum((theta_i - theta_r)**2) # scalar
+
+        fi = (d1 < d2).mean()
+        ecp += ( fi < 1 - alpha ).astype(int)
+
+    ecp /= Nsim
+    return ecp

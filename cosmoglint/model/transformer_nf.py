@@ -6,6 +6,15 @@ import torch.nn.functional as F
 
 from .base import Transformer1, Transformer2, Transformer3, Transformer1WithAttn, Transformer2WithAttn, Transformer3WithAttn
 
+from nflows.flows import Flow
+from nflows.distributions import StandardNormal, ConditionalDiagonalNormal
+from nflows.transforms import CompositeTransform, RandomPermutation, AffineCouplingTransform, ActNorm, PiecewiseRationalQuadraticCDF
+from nflows.nn.nets import ResidualNet
+from nflows.utils import torchutils
+
+from torch.distributions import Normal, Categorical, MixtureSameFamily, Independent
+
+
 def transformer_nf_model(args, **kwargs):
     
     ### Transformer model ###
@@ -24,7 +33,7 @@ def transformer_nf_model(args, **kwargs):
     else:
         raise ValueError(f"Invalid model: {args.model_name}")
     
-    model = model_class(num_condition=args.num_features_cond, d_model=args.d_model, num_layers=args.num_layers, num_heads=args.num_heads, max_length=args.max_length, num_features_in=args.num_features, num_features_out=args.num_context, last_activation=nn.Tanh(), pred_prob=False, **kwargs)
+    model = model_class(num_condition=args.num_features_cond, d_model=args.d_model, num_layers=args.num_layers, num_heads=args.num_heads, max_length=args.max_length, num_features_in=args.num_features_in, num_features_out=args.num_context, last_activation=nn.Tanh(), pred_prob=False, **kwargs)
 
     ### Flow model ###
     transforms = []
@@ -33,7 +42,7 @@ def transformer_nf_model(args, **kwargs):
         transforms.append(
             AffineCouplingTransform(
                 #mask=torch.arange(args.num_features_out) % 2,
-                mask = torch.arange(args.num_features) % 2 if ilayer % 2 == 0 else (torch.arange(args.num_features) + 1) % 2,
+                mask = torch.arange(args.num_features_in) % 2 if ilayer % 2 == 0 else (torch.arange(args.num_features_in) + 1) % 2,
                 transform_net_create_fn=lambda in_features, out_features: ResidualNet(
                     in_features=in_features,
                     out_features=out_features,
@@ -44,25 +53,25 @@ def transformer_nf_model(args, **kwargs):
                 )
             )
         )
-        transforms.append(PiecewiseRationalQuadraticCDF(shape=[args.num_features], num_bins=8, tails='linear', tail_bound=3.0))
-        transforms.append(RandomPermutation(args.num_features))
+        transforms.append(PiecewiseRationalQuadraticCDF(shape=[args.num_features_in], num_bins=8, tails='linear', tail_bound=3.0))
+        transforms.append(RandomPermutation(args.num_features_in))
         
     transform = CompositeTransform(transforms)
     
     if args.base_dist == "normal":
-        base_dist = StandardNormal(shape=[args.num_features])
+        base_dist = StandardNormal(shape=[args.num_features_in])
     elif args.base_dist == "conditional_normal":
-        base_dist = ConditionalDiagonalNormal(shape=[args.num_features], 
+        base_dist = ConditionalDiagonalNormal(shape=[args.num_features_in], 
             context_encoder=nn.Sequential(nn.Linear(args.num_context, args.hidden_dim), 
                                           nn.LeakyReLU(), 
-                                          nn.Linear(args.hidden_dim, 2 * args.num_features)
+                                          nn.Linear(args.hidden_dim, 2 * args.num_features_in)
             )
         )
 
     elif args.base_dist == "bimodal":
-        base_dist = BimodalNormal(shape=[args.num_features], offset=2.0)
+        base_dist = BimodalNormal(shape=[args.num_features_in], offset=2.0)
     elif args.base_dist == "conditional_bimodal":
-        base_dist = ConditionalBimodal(context_dim=args.num_context, latent_dim=args.num_features, hidden_dim=args.hidden_dim)
+        base_dist = ConditionalBimodal(context_dim=args.num_context, latent_dim=args.num_features_in, hidden_dim=args.hidden_dim)
     else:
         raise ValueError(f"Invalid base distribution: {args.base_dist}")
     flow = Flow(transform, base_dist)
@@ -99,7 +108,7 @@ def calculate_transformer_nf_loss(transformer, flow, condition, seq, mask, stop=
     else:
         return loss
 
-def generate_with_transformer_nf(transformer, flow, x_cond, stop_predictor=None, stop_threshold=None):
+def generate_with_transformer_nf(transformer, flow, x_cond, stop_predictor=None, prob_threshold=0, stop_threshold=None):
     transformer.eval()
     flow.eval()
     if stop_predictor is not None:
@@ -116,8 +125,28 @@ def generate_with_transformer_nf(transformer, flow, x_cond, stop_predictor=None,
         with torch.no_grad():
             context = transformer(x_cond, x_seq[:,:t,:]) # (batch, t+1, num_context)
             context = context[:, -1, :] # (batch, num_context)
-            sample = flow.sample(1, context) # (batch, 1, num_features)
-            x_seq[:, t, :] = sample.squeeze(1)
+            if prob_threshold > 0:
+                raise ValueError("# prob_threshold > 0 is not yet implemented")
+                num_samples = 1
+                embedded_context = flow._embedding_net(context)
+
+                noise, log_prob = flow._distribution.sample_and_log_prob(num_samples, context)
+                
+                if embedded_context is not None:
+                    # Merge the context dimension with sample dimension in order to apply the transform.
+                    noise = torchutils.merge_leading_dims(noise, num_dims=2)
+                    embedded_context = torchutils.repeat_rows(embedded_context, num_reps=1)
+
+                samples, _ = flow._transform.inverse(noise, context=embedded_context)
+
+                if embedded_context is not None:
+                    # Split the context dimension from sample dimension.
+                    samples = torchutils.split_leading_dim(samples, shape=[-1, num_samples])
+                
+            else:
+                samples = flow.sample(1, context=context) # (batch, 1, num_features)
+
+            x_seq[:, t, :] = samples.squeeze(1)
                
             if stop_predictor is not None:  
                 stop_prob = stop_predictor(context) # (batch, )
@@ -157,17 +186,6 @@ class StopPredictor(nn.Module):
     def forward(self, context):
         x = self.layers(context)
         return x.squeeze(-1)  # (batch_size,) in [0, 1]
-
-
-
-from nflows.flows import Flow
-from nflows.distributions import StandardNormal, ConditionalDiagonalNormal
-from nflows.transforms import CompositeTransform, RandomPermutation, AffineCouplingTransform, ActNorm, PiecewiseRationalQuadraticCDF
-from nflows.nn.nets import ResidualNet
-from nflows.utils import torchutils
-
-from torch.distributions import Normal, Categorical, MixtureSameFamily, Independent
-
 
 class BimodalNormal(StandardNormal):
     """A simple mixture of two Gaussians (bimodal) with fixed means."""

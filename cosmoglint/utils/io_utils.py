@@ -71,8 +71,7 @@ def normalize(x, keys, norm_param_dict, inverse=False, convert=True):
     keys: list of str
     norm_param_dict: dict
         e.g., {
-            "HaloMass": {"min": 10, "max": 15, "norm": "log"},
-            "GroupPosX": {"min": 0, "max": 205000, "norm": "linear"},
+            "GroupMass": {"min": 10, "max": 15, "norm": "log"},
             ...
         }
     inverse: bool
@@ -176,22 +175,18 @@ def load_halo_data(
     ):
         
     def load_values(f, key):
-        try:
-            data = f[key][:]
-            if key == "HaloMass":
-                data *= 1e10 / f.attrs["Hubble"]
+        if key not in f:
+            raise ValueError(f"Key '{key}' not found in the file.")
 
-            return data
-
-        except KeyError:
-            print(f"Key '{key}' not found in the file.")
-            return None, None
+        data = f[key][:]
+        return data
 
     num_features_in = len(input_features)
     num_features_out = len(output_features)
 
     with h5py.File(file_path, "r") as f:
 
+        # Load input features
         source_list = []
         for feature in input_features:
             x = load_values(f, feature)
@@ -199,12 +194,14 @@ def load_halo_data(
 
         source = np.stack(source_list, axis=1)  # (N, num_features_in)
         source = normalize(source, input_features, norm_param_dict)
-        mask = ( source[:, 0] > 0 )
 
+        mask = np.ones(len(source), dtype=bool)
+        for i in range(num_features_in):
+            mask = mask & ( source[:,i] > 0 )
+            
         if exclude_ratio > 0:
             boxsize = f.attrs["BoxSize"] # [kpc/h]
             halo_pos = f["GroupPos"][:]  # [kpc/h]
-
             mask_exclude = (halo_pos[:,0] > boxsize * (1.-exclude_ratio)) \
                         & (halo_pos[:,1] > boxsize * (1.-exclude_ratio)) \
                         & (halo_pos[:,2] > boxsize * (1.-exclude_ratio))
@@ -216,7 +213,12 @@ def load_halo_data(
                 print("# Exclude halos in the corner of size ({} * BoxSize)^3".format(exclude_ratio))
                 print("# The excluded region is {:.2f} % of the entire volume".format(100.0 * (exclude_ratio**3)))
                 mask = mask & (~mask_exclude)
+            
+        if mask.sum() == 0:
+            print("# No halo is found in {}".format(file_path))
+            return torch.empty((0, num_features_in), dtype=torch.float32), []
 
+        # Load output features
         target_list = []
         for feature in output_features:
             y = load_values(f, feature)
@@ -230,13 +232,13 @@ def load_halo_data(
         offset = 0
         y_list = []
         for j in range(len(source)):
-            if not mask[j]:
-                continue
-
             start = offset
             end = start + num_subgroups[j]
             offset = end
-            
+
+            if not mask[j]:                
+                continue
+
             if num_subgroups[j] == 0:
                 y_j = np.zeros((1, num_features_out)) # handle empty subgroups
             else:
@@ -307,9 +309,12 @@ class MyDataset(Dataset):
             
             self.g.append( g_tmp )
 
+        if len(self.x) == 0:
+            raise ValueError("No halo is found.")
+
         self.g = np.vstack(self.g) 
         self.g = torch.tensor(self.g, dtype=torch.float32)
-
+        
         _, num_params = (self.y[0]).shape
 
         #self.y_padded = torch.zeros(len(self.x), max_length, num_params)
