@@ -64,12 +64,14 @@ def generate_galaxy(args, x_in, global_params=None, verbose=True):
 
     ### generate galaxies
     print("# Generate galaxies (batch size: {:d})".format(opt.batch_size))
-    x_in = normalize(x_in, opt.input_features, opt.norm_param_dict)
+    for i, key in enumerate(opt.input_features):
+        x_in[...,i] = normalize(x_in[...,i], key, opt.norm_param_dict)
     x_in = torch.from_numpy(x_in).float().to(device)
 
     if global_params is not None:
         global_params = global_params[opt.global_features].to_numpy(dtype=np.float32)
-        global_params = normalize(global_params, opt.global_features, opt.norm_param_dict)
+        for i, key in enumerate(opt.global_features):
+            global_params[...,i] = normalize(global_params[...,i], key, opt.norm_param_dict)
         global_params = torch.tensor(np.array(global_params), dtype=torch.float32).to(device)
 
     if args.max_sfr_file is None:
@@ -95,7 +97,8 @@ def generate_galaxy(args, x_in, global_params=None, verbose=True):
     mask = create_mask(generated[:,:,0], stop_criterion) # (num_halos, seq_length)
 
     # De-normalize
-    generated = normalize(generated, opt.output_features, opt.norm_param_dict, inverse=True)
+    for i, key in enumerate(opt.output_features):
+        generated[...,i] = normalize(generated[...,i], key, opt.norm_param_dict, inverse=True)
 
     print("# Number of valid galaxies: {:d}".format(len(generated)))
     
@@ -136,12 +139,14 @@ def generate_galaxy_TransNF(args, x_in, global_params=None, verbose=True):
     ### generate galaxies
     print("# Generate galaxies (batch size: {:d})".format(opt.batch_size))
     
-    x_in = normalize(x_in, opt.input_features, opt.norm_param_dict)
+    for i, key in enumerate(opt.input_features):
+        x_in[...,i] = normalize(x_in[...,i], key, opt.norm_param_dict)
     x_in = torch.from_numpy(x_in).float().to(device)
 
     if global_params is not None:
         global_params = global_params[opt.global_features].to_numpy(dtype=np.float32)
-        global_params = normalize(global_params, opt.global_features, opt.norm_param_dict)
+        for i, key in enumerate(opt.global_features):
+            global_params[...,i] = normalize(global_params[...,i], key, opt.norm_param_dict)
         global_params = torch.from_numpy(global_params).float().to(device)
     
     num_batch = (len(x_in) + opt.batch_size - 1) // opt.batch_size
@@ -160,7 +165,8 @@ def generate_galaxy_TransNF(args, x_in, global_params=None, verbose=True):
     generated = generated.cpu().detach().numpy()
 
     # De-normalize
-    generated = normalize(generated, opt.output_features, opt.norm_param_dict, inverse=True)
+    for i, key in enumerate(opt.output_features):
+        generated[...,i] = normalize(generated[...,i], key, opt.norm_param_dict, inverse=True)
 
     # Set mask for selection
     sfr = generated[...,0]

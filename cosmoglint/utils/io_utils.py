@@ -65,10 +65,10 @@ def convert_to_log_with_sign(val):
 def inverse_convert_to_log_with_sign(val):
     return np.sign(val) * ( 10 ** np.abs( val ) - 1 )
 
-def normalize(x, keys, norm_param_dict, inverse=False, convert=True):
+def normalize(x, key, norm_param_dict, inverse=False, convert=True):
     """
-    x: array-like, shape (N,) or (N, num_features)
-    keys: list of str
+    x: array-like
+    key: str
     norm_param_dict: dict
         e.g., {
             "GroupMass": {"min": 10, "max": 15, "norm": "log"},
@@ -80,60 +80,27 @@ def normalize(x, keys, norm_param_dict, inverse=False, convert=True):
         If True, convert to/from log scale based on norm_param_dict.
     """
 
-    get_item = False
-    squeeze = False
-
     x = np.array(x)
-
-    if x.ndim == 0:
-        x = x[None, None]
-        get_item = True
-    
-    if x.ndim == 1:
-        if len(keys) == 1:
-            x = x[:, None]
-        else:
-            x = x[None, :]
-        squeeze = True
-
-
-    if not isinstance(keys, list):
-        keys = [keys]
-
-    if (len(keys) == 1) and (x.shape[1] != 1):
-        x = x[..., None]
-        squeeze = True
-
-    if x.shape[-1] != len(keys):
-        raise ValueError("Input x has shape {}, but expected {} features".format(x.shape, len(keys)))
         
     if norm_param_dict is not None:
-        xmin = np.array([(norm_param_dict[key])["min"] for key in keys])
-        xmax = np.array([norm_param_dict[key]["max"] for key in keys])
-        norm_mode = [ norm_param_dict[key]["norm"] for key in keys ]
+        xmin = norm_param_dict[key]["min"]
+        xmax = norm_param_dict[key]["max"] 
+        norm = norm_param_dict[key]["norm"]
 
         if inverse:
             x = x * ( xmax - xmin ) + xmin
             if convert:
-                for i, mode in enumerate(norm_mode):
-                    if mode == "log":
-                        x[...,i] = 10 ** x[..., i]
-                    elif mode == "log_with_sign":
-                        x[...,i] = inverse_convert_to_log_with_sign(x[...,i])
+                if norm == "log":
+                    x = 10 ** x
+                elif norm == "log_with_sign":
+                    x = inverse_convert_to_log_with_sign(x)
         else:
             if convert:
-                for i, mode in enumerate(norm_mode):
-                    if mode == "log":
-                        x[...,i] = convert_to_log(x[...,i], xmin[i])    
-                    elif mode == "log_with_sign":
-                        x[...,i] = convert_to_log_with_sign(x[...,i])
+                if norm == "log":
+                    x = convert_to_log(x, xmin)    
+                elif norm == "log_with_sign":
+                    x = convert_to_log_with_sign(x)
             x = ( x - xmin ) / ( xmax - xmin )
-            
-    if squeeze:
-        x = np.squeeze(x)
-
-    if get_item:
-        x = x.item()
 
     return x
 
@@ -158,7 +125,8 @@ def load_global_params(global_param_file, global_features, norm_param_dict=None)
 
         global_params = np.vstack(global_params)
 
-        global_params = normalize(global_params, global_features, norm_param_dict)        
+        for i, key in enumerate(global_features):
+            global_params[...,i] = normalize(global_params[...,i], key, norm_param_dict)        
 
     return global_params # (ndata, num_features_global)
     
@@ -193,7 +161,8 @@ def load_halo_data(
             source_list.append(x)
 
         source = np.stack(source_list, axis=1)  # (N, num_features_in)
-        source = normalize(source, input_features, norm_param_dict)
+        for i, key in enumerate(input_features):
+            source[:,i] = normalize(source[:,i], key, norm_param_dict)
 
         mask = np.ones(len(source), dtype=bool)
         for i in range(num_features_in):
@@ -225,7 +194,8 @@ def load_halo_data(
             target_list.append(y)
 
         target = np.stack(target_list, axis=1)  # (N, num_features_out)
-        target = normalize(target, output_features, norm_param_dict)
+        for i, key in enumerate(output_features):
+            target[:,i] = normalize(target[:,i], key, norm_param_dict)
 
         num_subgroups = f["GroupNsubs"][:]
 
@@ -357,11 +327,10 @@ def load_lightcone_data(input_fname, cosmo):
         theta = ( 90. - theta ) * 3600 # [arcsec]
         pos_x = theta * np.cos( phi * np.pi / 180. ) # [arcsec] 
         pos_y = theta * np.sin( phi * np.pi / 180. ) # [arcsec]
-
         
         print("# Minimum log mass in catalog: {:.5f}".format(np.min(np.log10(mass))))
-        print("# Maximum pos_x: {:.3f} arcsec".format(np.max(pos_x)))
-        print("# Maximum pos_y: {:.3f} arcsec".format(np.max(pos_y)))
+        print("# Maximum pos: ({:.3f}, {:.3f}) arcsec".format(np.max(pos_x), np.max(pos_y)))
+        print("# Minimum pos: ({:.3f}, {:.3f}) arcsec".format(np.min(pos_x), np.min(pos_y)))
         print("# Redshift: {:.3f} - {:.3f}".format(np.min(redshift_real), np.max(redshift_real)))
         print("# Number of halos: {}".format(len(mass)))
 
