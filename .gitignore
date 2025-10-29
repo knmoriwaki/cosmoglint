@@ -2,6 +2,7 @@
 **/test*.ipynb
 **/output/
 **/runs/
+**/tmp/
 *.egg-info/
 scripts/calc_statistics/
 dataset/
