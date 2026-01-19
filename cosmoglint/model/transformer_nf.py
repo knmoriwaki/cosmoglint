@@ -8,7 +8,7 @@ from .base import Transformer1, Transformer2, Transformer3, Transformer1WithAttn
 
 from nflows.flows import Flow
 from nflows.distributions import StandardNormal, ConditionalDiagonalNormal
-from nflows.transforms import CompositeTransform, RandomPermutation, AffineCouplingTransform, ActNorm, PiecewiseRationalQuadraticCDF
+from nflows.transforms import CompositeTransform, RandomPermutation, AffineCouplingTransform, ActNorm, PiecewiseRationalQuadraticCDF, AffineTransform
 from nflows.nn.nets import ResidualNet
 from nflows.utils import torchutils
 
@@ -37,6 +37,16 @@ def transformer_nf_model(args, **kwargs):
 
     ### Flow model ###
     transforms = []
+
+    alpha = 0.05 # value in RealNVP
+    transforms.append(
+    AffineTransform(
+        shift=torch.full([args.num_features_in], fill_value=alpha),
+        scale=torch.full([args.num_features_in], fill_value=1.0 - 2.0*alpha),
+    )
+    )
+    transforms.append(Logit())
+
     for ilayer in range(args.num_flows):
         #transforms.append(ActNorm(args.num_features_out)) # for stabilyzing training and quick convergence
         transforms.append(
@@ -291,3 +301,46 @@ class ConditionalBimodal(nn.Module):
         dist = self.get_distribution(context)
         return dist.log_prob(x)
     
+
+from nflows.transforms.base import InputOutsideDomain, Transform, InverseTransform
+    
+class Sigmoid(Transform):
+    def __init__(self, temperature=1, eps=1e-6, learn_temperature=False):
+        super().__init__()
+        self.eps = eps
+        if learn_temperature:
+            self.temperature = nn.Parameter(torch.Tensor([temperature]))
+        else:
+            temperature = torch.Tensor([temperature])
+            self.register_buffer('temperature', temperature)
+
+    def forward(self, inputs, context=None):
+        temperature = self.temperature.to(inputs.device)
+
+        inputs = temperature * inputs
+        outputs = torch.sigmoid(inputs)
+
+        logabsdet = torchutils.sum_except_batch(
+            torch.log(temperature) - F.softplus(-inputs) - F.softplus(inputs)
+        )
+        return outputs, logabsdet
+
+    def inverse(self, inputs, context=None):
+        if torch.min(inputs) < 0 or torch.max(inputs) > 1:
+            raise InputOutsideDomain()
+
+        inputs = torch.clamp(inputs, self.eps, 1 - self.eps)
+
+        temperature = self.temperature.to(inputs.device)
+        outputs = (1 / temperature) * (torch.log(inputs) - torch.log1p(-inputs))
+        logabsdet = -torchutils.sum_except_batch(
+            torch.log(temperature)
+            - F.softplus(-temperature * outputs)
+            - F.softplus(temperature * outputs)
+        )
+        return outputs, logabsdet
+
+
+class Logit(InverseTransform):
+    def __init__(self, temperature=1, eps=1e-6):
+        super().__init__(Sigmoid(temperature=temperature, eps=eps))
