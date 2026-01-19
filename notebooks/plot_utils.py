@@ -289,7 +289,6 @@ def show_map(frequency, intensity, intensity_line, side_length, lines_to_show=[]
         else:
             print(f"Warning: {line_name} not found in intensity_line, skipping...")
 
-
 def plot_logy_with_sign(x, y, ax, pow_ymin=-2, logy_pos=None, color="k", ls="solid", lw=1.5, label="", alpha=1):
     ax.set_yscale("linear")
 
@@ -310,8 +309,7 @@ def plot_logy_with_sign(x, y, ax, pow_ymin=-2, logy_pos=None, color="k", ls="sol
             _y.append(0)
     ax.plot(x, _y, ls = ls, color=color, lw=lw, alpha=alpha, label=label)
     
-
-def calc_ecp(x_true, y_true, alpha, sample_func, y_ref=None, Ngen=1000):
+def calc_ecp(x_true, y_true, alpha, sample_func, y_ref=None, Ngen=1000, show_pbar=True):
     Nsim = len(x_true)
     Nalpha = len(alpha)
 
@@ -321,7 +319,8 @@ def calc_ecp(x_true, y_true, alpha, sample_func, y_ref=None, Ngen=1000):
         y_ref = y_ref.detach().cpu().numpy()
 
     ecp = np.zeros(Nalpha)
-    for i in tqdm(range(Nsim)):
+    i_range = tqdm(range(Nsim)) if show_pbar else range(Nsim)
+    for i in i_range:
 
         tmp_x = x_true[i].unsqueeze(0).expand(Ngen,-1)
         

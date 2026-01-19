@@ -78,8 +78,16 @@ def create_mock(args):
 
     ### Load data
     mass, pos_x, pos_y, redshift_obs, redshift_real = load_lightcone_data(args.input_fname, cosmo=cosmo)
-    
     mass *= args.mass_correction_factor
+
+    if "pinocchio" in args.input_fname:
+        # Pinocchio's lightcone has a circular area
+        radius = pos_x.max()
+        pos_x += radius / np.sqrt(2)
+        pos_y += radius / np.sqrt(2)
+        print("# Shift positions -- new max pos: ({:.4f}, {:.4f})".format(pos_x.max(), pos_y.max()))
+
+
 
     if args.redshift_space:
         print("# Using redshift space")

@@ -26,12 +26,12 @@ else
     input_fname=../dataset/Pinocchio/my_lightcone/output/pinocchio.r${irun_id}.plc.out
 fi
 
-output_fname=${output_dir}/pinocchio.run${irun}.lightcone_sfrd_map.${side_length}sec_zmin${zmin}_zmax${zmax}_dz${dz}_rsd.h5
-
-#python3 create_lightcone.py --input_fname $input_fname --output_fname $output_fname --model_dir $model_dir --threshold $threshold --gpu_id $gpu_id --redshift_min $zmin --redshift_max $zmax --dz $dz --use_logz --side_length $side_length --angular_resolution $angular_resolution --param_dir ../dataset/param_files --redshift_space
+mass_correction_factor=0.9
+output_fname=${output_dir}/pinocchio.run${irun}.lightcone_sfrd_map.${side_length}sec_zmin${zmin}_zmax${zmax}_dz${dz}_rsd_factor${mass_correction_factor}.h5
+python3 create_lightcone.py --input_fname $input_fname --output_fname $output_fname --model_dir $model_dir --threshold $threshold --gpu_id $gpu_id --redshift_min $zmin --redshift_max $zmax --dz $dz --use_logz --side_length $side_length --angular_resolution $angular_resolution --param_dir ../dataset/param_files --redshift_space --mass_correction_factor $mass_correction_factor
 
 
 catalog_threshold=$threshold
-output_fname=${output_dir}/pinocchio.run${irun}.lightcone_catalog.${side_length}sec_zmin${zmin}_zmax${zmax}_sfrmin${catalog_threshold}_rsd.h5
+output_fname=${output_dir}/pinocchio.run${irun}.lightcone_catalog.${side_length}sec_zmin${zmin}_zmax${zmax}_sfrmin${catalog_threshold}_rsd_factor${mass_correction_factor}.h5
+#python3 create_lightcone.py --input_fname $input_fname --output_fname $output_fname --model_dir $model_dir --threshold $threshold --gpu_id $gpu_id --redshift_min $zmin --redshift_max $zmax --side_length $side_length --param_dir ../dataset/param_files --gen_catalog --catalog_threshold $catalog_threshold --redshift_space --mass_correction_factor $mass_correction_factor
 
-python3 create_lightcone.py --input_fname $input_fname --output_fname $output_fname --model_dir $model_dir --threshold $threshold --gpu_id $gpu_id --redshift_min $zmin --redshift_max $zmax --side_length $side_length --param_dir ../dataset/param_files --gen_catalog --catalog_threshold $catalog_threshold --redshift_space

@@ -33,12 +33,13 @@ def parse_args():
     parser.add_argument("--gpu_id", type=int, default=0, help="GPU ID to use")
 
     ### I/O parameters
-    parser.add_argument("--input_fname", type=str, default=None, help="Input filename")
+    parser.add_argument("--input_fname", type=str, default="group.txt", help="Input filename")
     parser.add_argument("--output_fname", type=str, default="test.h5", help="Output filename")
     parser.add_argument("--global_param_file", type=str, default=None, help="File containing global parameters")
     parser.add_argument("--global_param_id", type=int, default=0, help="Row ID in the global parameter file")
 
-    parser.add_argument("--boxsize", type=float, default=100.0, help="Box size [Mpc/h]")
+    parser.add_argument("--boxsize", type=float, default=100.0, help="Box size of data [Mpc/h]")
+    parser.add_argument("--boxsize_to_use", type=float, default=None, help="Box size to be used [Mpc/h]")
 
     ### Output format parameters
     parser.add_argument("--npix", type=int, default=100, help="Number of pixels in x and y direction")
@@ -70,7 +71,8 @@ def create_data(args):
     np.random.seed(args.seed)
 
     npix = np.array([args.npix, args.npix, args.npix_z])
-    dx_pix = args.boxsize / npix
+    args.boxsize_to_use = args.boxsize if args.boxsize_to_use is None else args.boxsize_to_use
+    dx_pix = args.boxsize_to_use / npix
 
     ### Load data
     print(f"# Load {args.input_fname}")
@@ -78,10 +80,7 @@ def create_data(args):
     if args.gen_both:
         args.redshift_space = True
 
-    if args.input_fname is None:
-        ValueError("Input filename is not specified. Use --input_fname to specify the input file.")
-
-    elif "pinocchio" in args.input_fname:
+    if "pinocchio" in args.input_fname:
         match = re.search(r'pinocchio\.([0-9]+\.[0-9]+)', args.input_fname)
         redshift = float(match.group(1))
             
@@ -127,6 +126,13 @@ def create_data(args):
     print("# Maximum log mass in catalog [Msun]: {:.5f}".format(np.max(np.log10(mass))))
     print("# Use halos with log mass [Msun] > {}".format(args.logm_min))
     mask = (np.log10(mass) > args.logm_min)
+    
+    if args.boxsize_to_use < args.boxsize:
+        print("# Use a volume at the last corner -- new boxsize: {:.3f}".format(args.boxsize_to_use))
+    xmin = args.boxsize - args.boxsize_to_use
+    pos = pos - xmin
+    mask = mask & (pos > 0).all(axis=-1)
+    
     mass = mass[mask]
     pos = pos[mask]
     vel = vel[mask]
