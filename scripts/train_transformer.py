@@ -24,7 +24,7 @@ def parse_args():
     parser.add_argument("--gpu_id", type=str, default="0")
     parser.add_argument("--output_dir", type=str, default="output")
     parser.add_argument("--seed", type=int, default=12345)
-
+    parser.add_argument("--show_pbar", action=argparse.BooleanOptionalAction, default=True)
 
     # dataset parameters
     parser.add_argument("--data_path", type=str, nargs='+', default=["data.h5"], help="Path to the data file(s). If the first file contains '*', indices will be used to specify the files, and other files will be ignored.")
@@ -54,6 +54,7 @@ def parse_args():
     parser.add_argument("--num_layers", type=int, default=4)
     parser.add_argument("--num_heads", type=int, default=8)
     parser.add_argument("--num_features_out", type=int, default=200)
+    parser.add_argument("--use_flat_representation", action=argparse.BooleanOptionalAction, default=True, help="If true, use flattened point features (B, N*M). If false, keep (B, N, M).")
 
     return parser.parse_args()
 
@@ -100,7 +101,7 @@ def train_model(args):
         if global_params is not None:
             global_params = global_params[istart:iend+1, :]
 
-    dataset = MyDataset(args.data_path, args.input_features, args.output_features, global_params=global_params, norm_param_dict=norm_param_dict, max_length=args.max_length, exclude_ratio=args.exclude_ratio)
+    dataset = MyDataset(args.data_path, args.input_features, args.output_features, global_params=global_params, norm_param_dict=norm_param_dict, max_length=args.max_length, exclude_ratio=args.exclude_ratio, use_flat_representation=args.use_flat_representation, show_pbar=args.show_pbar)
     train_size = int(args.train_ratio * len(dataset))
     val_size = len(dataset) - train_size
     train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
@@ -142,15 +143,11 @@ def train_model(args):
 
     def loss_func(batch, weight=None):
 
-        context, seq, global_cond, mask = batch
-
-        context = context.to(device)  # (batch, num_condition)   
-        seq = seq.to(device)     # (batch, max_length, num_features_in)
-        global_cond = None if global_cond is None else global_cond.to(device) # (batch, num_features_global)
-        mask = mask.to(device)   # (batch, max_length)
-        #weight = (6.7 * context[:,0]).pow(10).detach()
-        #weight = weight / weight.mean()
-
+        seq = batch["target"].to(device)     # (batch, max_length, num_features_in)
+        mask = batch["mask"].to(device)   # (batch, max_length)
+        context = batch["context"].to(device)  # (batch, num_condition)   
+        global_cond = batch["global_context"].to(device) # (batch, num_features_global)
+        
         input_seq = seq[:, :-1]
         target = seq
 
@@ -206,7 +203,12 @@ def train_model(args):
         f.write(f"# loss loss_val\n")
 
         num_batches = len(train_dataloader)
-        for epoch in tqdm(range(args.num_epochs), file=sys.stderr):
+
+        elist = range(args.num_epochs)
+        if args.show_pbar:
+            elist = tqdm(elist, file=sys.stderr)
+            
+        for epoch in elist:
             model.train()
 
             for count, batch in enumerate(train_dataloader):
@@ -237,7 +239,10 @@ def train_model(args):
             if (epoch + 1) % args.save_freq == 0 or epoch + 1 == args.num_epochs: 
                 fname = "{}/model_ep{:d}.pth".format(args.output_dir, epoch+1)
                 torch.save(model.state_dict(), fname)
-                tqdm.write("# Model saved to {}".format(fname))
+                if args.show_pbar:
+                    tqdm.write("# Model saved to {}".format(fname))
+                else:
+                    print("# Model saved to {}".format(fname))
 
                 fname = "{}/model.pth".format(args.output_dir)
                 torch.save(model.state_dict(), fname)

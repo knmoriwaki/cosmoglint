@@ -22,7 +22,8 @@ def parse_args():
     parser.add_argument("--gpu_id", type=int, default=0)
     parser.add_argument("--output_dir", type=str, default="output")
     parser.add_argument("--seed", type=int, default=12345)
-    
+    parser.add_argument("--show_pbar", action=argparse.BooleanOptionalAction, default=True)
+
     # dataset parameters
     parser.add_argument("--data_path", type=str, nargs='+', default=["data.h5"])
     parser.add_argument("--indices", type=str, default=None, help="e.g., 0-999. Only used when data_path contains *.")
@@ -106,7 +107,7 @@ def train_model(args):
         if global_params is not None:
             global_params = global_params[istart:iend+1, :]
 
-    dataset =  MyDataset(args.data_path, args.input_features, args.output_features, global_params=global_params, norm_param_dict=norm_param_dict, max_length=args.max_length, exclude_ratio=args.exclude_ratio)
+    dataset =  MyDataset(args.data_path, args.input_features, args.output_features, global_params=global_params, norm_param_dict=norm_param_dict, max_length=args.max_length, exclude_ratio=args.exclude_ratio, use_flat_representation=False, show_pbar=args.show_pbar)
     train_size = int(args.train_ratio * len(dataset))
     val_size = len(dataset) - train_size
     train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
@@ -152,21 +153,29 @@ def train_model(args):
         f.write(f"#epoch loss loss_val\n")
 
         num_batches = len(train_dataloader)
-        for epoch in tqdm(range(args.num_epochs)):
+        elist = range(args.num_epochs)
+        if args.show_pbar:
+            elist = tqdm(elist, file=sys.stderr)
+        def my_print(log):
+            if args.show_pbar:
+                tqdm.write(log)
+            else:
+                print(log)
+        for epoch in elist:
             model.train()
 
-            for count, (condition, seq, global_cond, mask) in enumerate(train_dataloader):
+            for count, batch in enumerate(train_dataloader):
 
                 model.eval() # val evaluation first for ActNorm in flow
-                for condition_val, seq_val, global_cond_val, mask_val, in val_dataloader:
+                for batch_val, in val_dataloader:
                     with torch.no_grad():
-                        loss_val = calculate_transformer_nf_loss(model, flow, condition_val, seq_val, mask_val)
+                        loss_val = calculate_transformer_nf_loss(model, flow, batch_val)
                         break # show one batch result only
                 model.train()
                 
                 optimizer.zero_grad()
                 
-                loss = calculate_transformer_nf_loss(model, flow, condition, seq, mask)
+                loss = calculate_transformer_nf_loss(model, flow, batch)
 
                 loss.backward()
                 optimizer.step()
@@ -180,11 +189,11 @@ def train_model(args):
             if (epoch + 1) % args.save_freq == 0 or epoch + 1 == args.num_epochs: 
                 fname = "{}/model_ep{:d}.pth".format(args.output_dir, epoch+1)
                 torch.save(model.state_dict(), fname)
-                tqdm.write("# Model saved to {}".format(fname))
+                my_print("# Model saved to {}".format(fname))
 
                 fname = "{}/model_ep{:d}.pth".format(args.output_dir, epoch+1)
                 torch.save(flow.state_dict(), fname)
-                tqdm.write("# Model saved to {}".format(fname))
+                my_print("# Model saved to {}".format(fname))
 
                 fname = "{}/model.pth".format(args.output_dir)
                 torch.save(model.state_dict(), fname)

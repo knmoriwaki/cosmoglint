@@ -41,7 +41,7 @@ def generate_galaxy(args, x_in, global_params=None, verbose=True):
     """
     args: args.gpu_id, args.model_dir, args.threshold, and args.max_sfr_file are used
     x_in: (num_halos, num_features_in); halo properties
-   """
+    """
 
     print("# Use Transformer to generate SFR")
 
@@ -93,7 +93,13 @@ def generate_galaxy(args, x_in, global_params=None, verbose=True):
             generated_batch, _ = model.generate(x_batch, global_cond=global_cond_batch, prob_threshold=1e-5, stop_criterion=stop_criterion, max_ids=max_ids) # (batch_size, seq_length, num_features)
             
         generated.append(generated_batch.cpu().detach().numpy())
-    generated = np.concatenate(generated, axis=0) # (num_halos, seq_length, num_features)
+        
+    generated = np.concatenate(generated, axis=0) # (num_halos, seq_length, num_features) or (num_halos, seq_length * num_features, 1)
+
+    if args.use_flat_representation:
+        generated = generated.squeeze(-1).reshape(len(generated), -1, args.num_features_in) # (num_halos, max_length, num_features) 
+        mask = mask.reshape(len(mask), -1, args.num_features_in)
+
     mask = create_mask(generated[:,:,0], stop_criterion) # (num_halos, seq_length)
 
     # De-normalize
@@ -160,10 +166,9 @@ def generate_galaxy_TransNF(args, x_in, global_params=None, verbose=True):
         x_batch = x_in[start: start + opt.batch_size] # (batch_size, 1)
         global_cond_batch = global_params.unsqueeze(0).repeat(len(x_batch), 1) if global_params is not None else None
         generated_batch = generate_with_transformer_nf(model, flow, x_batch, global_cond=global_cond_batch, stop_criterion=stop_criterion) # (batch_size, max_length, num_features)
-        generated.append(generated_batch)
-    generated = torch.cat(generated, dim=0) # (num_halos, max_length, num_features)
-    generated = generated.cpu().detach().numpy()
-
+        generated.append(generated_batch.cpu().detach().numpy())
+    generated = torch.cat(generated, dim=0) # (num_halos, max_length, num_features) or (num_halos, max_length * num_features, 1)
+     
     # De-normalize
     for i, key in enumerate(opt.output_features):
         generated[...,i] = normalize(generated[...,i], key, opt.norm_param_dict, inverse=True)

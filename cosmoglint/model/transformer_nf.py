@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .base import Transformer1, Transformer2, Transformer3, Transformer1WithAttn, Transformer2WithAttn, Transformer3WithAttn
+from .transformer import Transformer1, Transformer2, TransformerWithGlobalCond, Transformer1WithAttn, Transformer2WithAttn
 
 from nflows.flows import Flow
 from nflows.distributions import StandardNormal, ConditionalDiagonalNormal
@@ -22,18 +22,38 @@ def transformer_nf_model(args, **kwargs):
         model_class = Transformer1
     elif args.model_name == "transformer2":
         model_class = Transformer2
-    elif args.model_name == "transformer3":
-        model_class = Transformer3
+    elif args.model_name == "transformer1_with_global_cond":
+        model_class = TransformerWithGlobalCond
+        transformer_cls = Transformer1
+    elif args.model_name == "transformer2_with_global_cond":
+        model_class = TransformerWithGlobalCond
+        transformer_cls = Transformer2
     elif args.model_name == "transformer1_with_attn":
         model_class = Transformer1WithAttn
     elif args.model_name == "transformer2_with_attn":
         model_class = Transformer2WithAttn
-    elif args.model_name == "transformer3_with_attn":
-        model_class = Transformer3WithAttn
     else:
         raise ValueError(f"Invalid model: {args.model_name}")
     
-    model = model_class(num_condition=args.num_features_cond, d_model=args.d_model, num_layers=args.num_layers, num_heads=args.num_heads, max_length=args.max_length, num_features_in=args.num_features_in, num_features_out=args.num_context, last_activation=nn.Tanh(), pred_prob=False, **kwargs)
+    common_args = dict(
+            num_condition = args.num_features_cond, 
+            d_model = args.d_model, 
+            num_layers = args.num_layers, 
+            num_heads = args.num_heads, 
+            max_length = args.max_length, 
+            num_features_in = args.num_features_in, 
+            num_features_out = args.num_context, 
+            num_token_types = 1,
+            last_activation = nn.Tanh(), 
+            pred_prob = False, 
+            **kwargs
+        )
+
+    if "with_global_cond" in args.model_name:
+        common_args["num_features_global"] = args.num_features_global
+        common_args["transformer_cls"] = transformer_cls
+    
+    model = model_class(**common_args)
 
     ### Flow model ###
     transforms = []
@@ -90,14 +110,16 @@ def transformer_nf_model(args, **kwargs):
     
 
 
-def calculate_transformer_nf_loss(transformer, flow, condition, seq, mask, stop=None, stop_predictor=None):
+def calculate_transformer_nf_loss(transformer, flow, batch, stop=None, stop_predictor=None):
     device = next(transformer.parameters()).device
-    condition = condition.to(device)
-    seq = seq.to(device)
-    mask = mask.to(device) # (batch, max_length, num_context)
+
+    condition = batch["context"].to(device)
+    seq = batch["target"].to(device)
+    mask = batch["mask"].to(device) # (batch, max_length, num_context)
+    global_cond = batch["global_context"].to(device)
 
     input_seq = seq[:, :-1] # (batch, max_length-1, num_features)
-    output = transformer(condition, input_seq) # (batch, max_length, num_context)
+    output = transformer(condition, input_seq, global_cond=global_cond) # (batch, max_length, num_context)
 
     mask = mask[:,:,0].reshape(-1) # (batch * max_length)
 

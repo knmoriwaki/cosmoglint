@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="cosmoglint",
-    version="0.1.0",
+    version="2.0.0",
     author="Kana Moriwaki",
     url="https://github.com/knmoriwaki/cosmoglint",
     packages=find_packages(),
@@ -14,6 +14,6 @@ setup(
         "nflows",
         "astropy",
     ],
-    python_requires=">=3.8"
+    python_requires=">=3.9"
 )
 

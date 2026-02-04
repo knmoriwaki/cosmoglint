@@ -1,7 +1,7 @@
 **/__pycache__/
 **/test*.ipynb
 **/output/
-**/runs/
+**/runs*/
 **/tmp/
 *.egg-info/
 scripts/calc_statistics/

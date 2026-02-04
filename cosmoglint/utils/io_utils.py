@@ -1,3 +1,4 @@
+import sys
 import os
 from argparse import Namespace
 import random
@@ -244,6 +245,8 @@ class MyDataset(Dataset):
             ndata=None, 
             exclude_ratio=0.0,
             use_excluded_region=False,
+            use_flat_representation=False,
+            show_pbar=True,
         ):
             
         if not isinstance(path, list):
@@ -257,13 +260,16 @@ class MyDataset(Dataset):
         self.y = []
         self.g = []
 
+        plist = path
         if len(path) < 20:
             verbose = True 
         else:
             verbose = False
+            if show_pbar:
+                plist = tqdm(plist, file=sys.stderr)
             print("# Loading halo data from {} to {} ({} files)".format(path[0], path[-1], len(path)))
 
-        for i, p in tqdm(enumerate(path)):
+        for i, p in enumerate(plist):
             if verbose:
                 print(f"# Loading halo data from {p}")
     
@@ -287,20 +293,29 @@ class MyDataset(Dataset):
         
         _, num_params = (self.y[0]).shape
 
-        #self.y_padded = torch.zeros(len(self.x), max_length, num_params)
         self.y_padded = torch.zeros(len(self.x), max_length, num_params)
         self.mask = torch.zeros(len(self.x), max_length, num_params, dtype=torch.bool)
         
         for i, y_i in enumerate(self.y):
             length = len(y_i)
-            self.y_padded[i, :length, :] = y_i
+            self.y_padded[i, :length, :] = y_i[:max_length]
             self.mask[i, :length+1, :] = True # use the last + 1 value to learn when to stop
         
+        if use_flat_representation:
+            self.y_padded = self.y_padded.reshape(len(self.y_padded), -1, 1) # (Nhalo, max_length * output_features, 1)
+            self.mask = self.mask.reshape(len(self.mask), -1, 1) # (Nhalo, max_length * output_features, 1)
+
     def __len__(self):
         return len(self.x)
 
     def __getitem__(self, idx):
-        return self.x[idx], self.y_padded[idx], self.g[idx], self.mask[idx]
+        batch = {
+            "context": self.x[idx],
+            "global_context": self.g[idx],
+            "target": self.y_padded[idx],
+            "mask": self.mask[idx]
+        }
+        return batch
     
 def load_lightcone_data(input_fname, cosmo):
     print(f"# Load {input_fname}")
