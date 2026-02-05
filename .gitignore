@@ -3,7 +3,10 @@
 **/output/
 **/runs*/
 **/tmp/
+dist/
+build/
 *.egg-info/
+*.whl
+*.tar.gz
 scripts/calc_statistics/
 dataset/
-
