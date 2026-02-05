@@ -109,7 +109,7 @@ pip install -r requirements.txt
 Example:
 ```bash
 cd scripts
-python train_transformer.py --data_path [data_path] --norm_param_file [norm_param_file] --use_dist --use_vel
+python train_transformer.py --data_path [data_path] --norm_param_file [norm_param_file] 
 ```
 
 Important options:
@@ -118,10 +118,12 @@ Important options:
 - `--input_features`: List of the input properties (default: `["GroupMass"]`)
 - `--output_features`: List of the output properties (default: `["SubhaloSFR", "SubhaloDist", "SubhaloVrad", "SubhaloVtan"]`)
 - `--max_length`: Maximum number of galaxies (sequence length) per halo (default: 30).
+- `--use_flat_representation`: If true, use flattened point features (B, N * M). If false, keep (B, N, M). Use `--no-use_flat_representation` to set it to false (default: true).
 
 Other options:
 - `--gpu_id`: ID of the GPU to use (default: "0"). Accepts string values like "0", "1", etc.
 - `--seed`: Random seed for reproducibility (default: 12345).
+- `--show_pbar`: Show progress bar. Use `--no-show_pbar` to disable progress bar. (default: True)
 - `--output_dir`: Directory where outputs (e.g., model checkpoints, logs) will be saved (default: "output").
 - `--global_features`: List of global properties. If not None, `global_param_file` should be provided (default: None)
 - `--global_param_file`: Path to the global parameters file(s). The header should include `global_features`. (default: None)
@@ -263,4 +265,24 @@ Other options:
 ## Other models
 
 - `transformer`: Default model. Transformer outputs one-hot vectors that represent the probability distributions of parameters.
-- `transformer_nf`: A normalizing flow samples galaxies conditioned on the output of Transformer.
+- `transformer_nf`: Transformer + normalizing flow model. NF samples galaxies conditioned on the output of Transformer.
+
+
+## Citation
+
+If you use CosmoGLINT in your research, please cite [Moriwaki et al. 2025](https://arxiv.org/abs/2506.16843)
+
+```
+@ARTICLE{CosmoGLINT,
+  title = {CosmoGLINT: Cosmological Generative Model for Line Intensity Mapping with Transformer},
+  author = {{Moriwaki}, Kana and {Jun}, Rui Lan and {Osato}, Ken and {Yoshida}, Naoki},
+  journal = {arXiv preprints},
+  year = 2025,
+  month = jun,
+  eid = {arXiv:2506.16843},
+  doi = {10.48550/arXiv.2506.16843},
+  archivePrefix = {arXiv},
+  eprint = {2506.16843},
+  primaryClass = {astro-ph.CO}
+}
+```

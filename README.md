@@ -38,14 +38,16 @@ pip install -r requirements.txt
 
 Example:
 ```bash
-python train_transformer.py --data_path [data_path] --norm_param_file [norm_param_file] --use_dist --use_vel
+python train_transformer.py --data_path [data_path] --norm_param_file [norm_param_file] 
 ```
 
 Options:
-- `--data_path`: Path(s) to the training data. Data is an hdf5 file that contains properties of halos (`HaloMass`, `NumSubgroups`, `Offset`) and galaxies (`SubgroupSFR`, `SubgroupDist`, `SubgroupVrad`, `SubgroupVtan`), where `NumSubgroups` and `Offset` are used for determining host halos of galaxies. Multiple files can be passed.
-- `--norm_param_file`: Path to the json file that specifies the normalization settings. Each key (e.g., `HaloMass`, `subgroupSFR`) maps to a dictionary with `min` / `max` and `norm`. If `norm` is `"log"` or `"log_with_sign"`, the `min` / `max` normalization is applied after the log conversion.
-- `--use_dist`: If set, the distance to halo is predicted
-- `--use_vel`: If set, relative velocity to halo is predicted
+- `--data_path`: Path(s) to the training data. Data is an hdf5 file that contains properties of halos and galaxies. In addition to those for input and output features, the number of galaxies in each halo (`GroupNsubs`) should be provided. Multiple files can be passed.
+- `--norm_param_file`: Path to the json file that specifies the normalization settings. Each key (e.g., `HaloMass`) maps to a dictionary with `min` / `max` and `norm`. If `norm` is `"log"` or `"log_with_sign"`, the `min` / `max` normalization is applied after the log conversion.
+- `--input_features`: List of the input properties (default: `["GroupMass"]`)
+- `--output_features`: List of the output properties (default: `["SubhaloSFR", "SubhaloDist", "SubhaloVrad", "SubhaloVtan"]`)
+- `--max_length`: Maximum number of galaxies (sequence length) per halo (default: 30).
+- `--use_flat_representation`: If true, use flattened point features (B, N * M). If false, keep (B, N, M). Use `--no-use_flat_representation` to set it to false (default: true).
 
 ## Create mock data cube
 
@@ -55,8 +57,13 @@ python create_data_cube.py --input_fname [input_fname] --model_dir [model_dir]
 ```
 
 Options:
-- `--input_fname`: Path to the halo catalog. Text file that contains the logarithmic total halo mass [Msun] (1st column), comving positions [Mpc/h] (2nd to 4th columns), and velocities [km/s] (5th to 8th columns) and catalog in [Pinocchio](https://github.com/pigimonaco/Pinocchio) format are supported.
+- `--input_fname`: Path to the halo catalog. Text file that contains halo mass [Msun] in log scale (1st column), comving positions [Mpc/h] (2nd to 4th columns), and velocities [km/s] (5th to 8th columns) and catalog in [Pinocchio](https://github.com/pigimonaco/Pinocchio) format are supported.
 - `--model_dir`: Path to a directory containing the trained model (`model.pth` and `args.json`). If not set, column 7 of the input file is used as intensity.
+- `--boxsize`: Size of the simulation box in comoving units [Mpc/h] (default: 100.0).
+- `--redshift_space`: If set, positions are converted to redshift space using halo velocities.
+- `--gen_both`: If set, generates both real-space and redshift-space data cubes.
+- `--npix`: Number of pixels in the x and y directions for the data cube (default: 100).
+- `--npix_z`: Number of pixels in the z direction (default: 90).
 
 ## Create lightcone
 
@@ -65,17 +72,25 @@ Example:
 python create_lightcone.py --input_fname [input_fname] --model_dir [model_dir] --model_config_file [model_config_file]
 ```
 
-- `--input_fname`: Path to the halo catalog. Text file that contains the logarithmic total halo mass [Msun] (1st column), comving positions [Mpc/h] (2nd to 4th columns), and velocities [km/s] (5th to 8th columns) and catalog in [Pinocchio](https://github.com/pigimonaco/Pinocchio) format are supported.
-- `--model_dir`: Path to a directory containing the trained model (`model.pth` and `args.json`). If not set, column 7 of the input file is used as intensity.
-- `--model_config_file`: Path to a JSON file containing a dictionary where each key is a stringified snapshot ID, and the value is a list containing the model directory relative to `model_dir` and the redshift.
-
 Example of `model_config_file`:
 ```json
 {
-  "33": ["transformer1_33_use_vel_ep40_bs512_w0.02", 2.002],
-  "21": ["transformer1_21_use_vel_ep60_bs512_w0.02", 4.008]
+  "33": ["transformer1_33_ep40_bs512_w0.02", 2.002],
+  "21": ["transformer1_21_ep60_bs512_w0.02", 4.008]
 }
 ```
+
+- `--input_fname`: Path to the lightcone halo catalog. Pinocchio format is supported.
+- `--output_fname`: Output filename (HDF5 format).
+- `--model_dir`: Path to a directory containing the trained models. 
+- `--model_config_file`: Path to a JSON file that contains the names of the trained models to be used for each redshift bin. The JSON file is a dictionary where each key is a stringified snapshot ID, and the value is a list containing the model directory relative to `model_dir` and the redshift.
+- `--redshift_space`: If set, generate output in redshift space.
+- `redshift_min`, `--redshift_max`: Redshift range for the lightcone.
+- `dz`: Redshift bin width. Indicates dlogz if `--use_logz` is given.
+- `use_logz`: Use dlogz instead of dz for redshift binning.
+- `--side_length`, `--angular_resolution`: Angular size and resolution (arcsec) of the simulated map.
+- `--gen_catalog`: If set, generate a galaxy catalog with SFR greater than --catalog_threshold.
+- `--catalog_threshold`: SFR threshold for inclusion in the catalog.
 
 ## Visualization
 
