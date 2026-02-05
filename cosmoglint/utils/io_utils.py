@@ -133,12 +133,12 @@ def load_halo_data(
         file_path, 
         input_features,
         output_features,
-        norm_param_dict=None, 
-        max_length=10, 
-        sort=True,
-        ndata=None,
-        exclude_ratio=0.0, 
-        use_excluded_region=False,
+        norm_param_dict = None, 
+        max_length = 10, 
+        sort = True,
+        ndata = None,
+        exclude_ratio = 0.0, 
+        use_excluded_region = False,
     ):
         
     def load_values(f, key):
@@ -236,15 +236,15 @@ class MyDataset(Dataset):
             path,  
             input_features,
             output_features, 
-            global_params=None,
-            norm_param_dict=None, 
-            max_length=10, 
-            sort=True,
-            ndata=None, 
-            exclude_ratio=0.0,
-            use_excluded_region=False,
-            use_flat_representation=False,
-            show_pbar=True,
+            global_params = None,
+            norm_param_dict = None, 
+            max_length = 10, 
+            sort = True,
+            ndata = None, 
+            exclude_ratio = 0.0,
+            use_excluded_region = False,
+            use_flat_representation = False,
+            show_pbar = True,
         ):
             
         if not isinstance(path, list):
