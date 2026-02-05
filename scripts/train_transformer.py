@@ -14,7 +14,7 @@ from torch.distributions import Beta
 import torch.nn.functional as F
 
 from cosmoglint.utils import MyDataset, load_global_params
-from cosmoglint.model import transformer_model
+from cosmoglint.model.transformer import transformer_model
 
 def parse_args():
 

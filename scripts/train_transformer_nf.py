@@ -12,7 +12,7 @@ from torch.utils.data import DataLoader, WeightedRandomSampler
 from torch.utils.data import random_split
 
 from cosmoglint.utils import MyDataset, load_global_params
-from cosmoglint.model import transformer_nf_model, my_stop_predictor, calculate_transformer_nf_loss
+from cosmoglint.model.transformer_nf import transformer_nf_model, my_stop_predictor, calculate_transformer_nf_loss
 
 def parse_args():
 
