@@ -97,8 +97,8 @@ def generate_galaxy(args, x_in, global_params=None, verbose=True):
     generated = np.concatenate(generated, axis=0) # (num_halos, seq_length, num_features) or (num_halos, seq_length * num_features, 1)
 
     if opt.use_flat_representation:
-        generated = generated.squeeze(-1).reshape(len(generated), -1, args.num_features_in) # (num_halos, max_length, num_features) 
-        mask = mask.reshape(len(mask), -1, args.num_features_in)
+        generated = generated.squeeze(-1).reshape(len(generated), -1, opt.num_features_in) # (num_halos, max_length, num_features) 
+        mask = mask.reshape(len(mask), -1, opt.num_features_in)
 
     mask = create_mask(generated[:,:,0], stop_criterion) # (num_halos, seq_length)
 

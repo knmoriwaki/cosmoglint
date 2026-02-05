@@ -14,6 +14,11 @@ For detailed usage and options, see [DOCUMENTATION](./DOCUMENTATION.md).
 
 ## Installation
 
+Python>=3.9 is required. 
+
+This package requires PyTorch.
+Please install PyTorch first following https://pytorch.org
+
 Install package and from local clone:
 
 ```bash

@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cosmoglint"
+version = "1.0.0"
+description = "Transformer-based generative model for galaxies"
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [{ name = "Kana Moriwaki" }]
+license = { file = "LICENSE" }
+dependencies = [
+  "numpy",
+  "tqdm",
+  "h5py",
+  "nflows",
+  "astropy",
+]
+
+[project.urls]
+Homepage = "https://github.com/knmoriwaki/cosmoglint"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["cosmoglint", "cosmoglint.*"]
+

@@ -18,6 +18,11 @@ Models trained with TNG300-1 at z = 0.5 - 6 and generated data are available at 
 
 ## Installation
 
+Python>=3.9 is required.
+
+This package requires PyTorch.
+Please install PyTorch first following https://pytorch.org
+
 Install package and from local clone:
 
 ```bash
