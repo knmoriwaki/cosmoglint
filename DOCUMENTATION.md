@@ -89,7 +89,7 @@ Shape:
 Options:
 | Key                    | Description                                                                                                                                                                |
 |------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **`model_name`**       | Name or identifier for the model configuration (default: `"transformer1"`). Available options are:<br> - `"transformer1"`: halo is prepended to the sequence; positional encoding is concatenated separately<br> - `"transformer2"`: halo and fixed position information are embedded together with galaxy features<br> - `"transformer3"`: halo and galaxy features are embedded together; positional encoding is concatenated separately | |
+| **`model_name`**       | Name or identifier for the model configuration (default: `"transformer1"`). Available options are:<br> - `"transformer1"`: halo is prepended to the sequence<br> - `"transformer2"`: halo and galaxy features are embedded together | |
 | **`max_length`**       | Maximum number of galaxies (sequence length) the model will process per halo.|
 | **`d_model`**          | Dimensionality of the internal feature space (i.e., size of the token embeddings and hidden layers in the transformer).                             |
 | **`num_layers`**       | Number of transformer decoder layers stacked in the model.                                          |
@@ -270,7 +270,7 @@ Other options:
 ## Other models
 
 - `transformer`: Default model. Transformer outputs one-hot vectors that represent the probability distributions of parameters.
-- `transformer_nf`: Transformer + normalizing flow model. NF samples galaxies conditioned on the output of Transformer.
+- `transformer_nf`: Transformer + normalizing flow model. NF samples galaxies conditioned on the output of Transformer. Note that a package `nflows` is additionally required for using this model.
 
 
 ## Citation

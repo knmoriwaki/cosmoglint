@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cosmoglint"
-version = "1.0.0"
+version = "1.0.1"
 description = "Transformer-based generative model for galaxies"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -14,7 +14,6 @@ dependencies = [
   "numpy",
   "tqdm",
   "h5py",
-  "nflows",
   "astropy",
 ]
 
