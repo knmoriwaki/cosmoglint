@@ -61,7 +61,20 @@ def transformer_model(args, **kwargs):
     return model
 
 class TransformerBase(nn.Module):
-    def __init__(self, num_condition=1, d_model=128, num_layers=4, num_heads=8, max_length=10, num_features_in=1, num_features_out=1, num_token_types=1, output_features=["SubhaloSFR"], central_values={"SubhaloDist": 0.0, "SubhaloVrad": 0.5}, dropout=0):
+    def __init__(
+            self, 
+            num_condition = 1, 
+            d_model = 128, 
+            num_layers = 4, 
+            num_heads = 8, 
+            max_length = 10, 
+            num_features_in = 1, 
+            num_features_out = 1, 
+            num_token_types = 1, 
+            output_features = ["SubhaloSFR"], 
+            central_values = {"SubhaloDist": 0.0, "SubhaloVrad": 0.5}, 
+            dropout = 0
+        ):
         super().__init__()
 
         self.d_model = d_model
@@ -96,7 +109,19 @@ class TransformerBase(nn.Module):
         zero_tensor = torch.tensor(0.0).to(x.device)
         return torch.where(mask, zero_tensor, x)
         
-    def generate(self, context, global_cond=None, seq=None, teacher_forcing_ratio=0.0, temperature=1.0, stop_criterion=None, prob_threshold=1e-5, monotonicity_start_index=1, max_ids=None, buffer_percent=0.05):
+    def generate(
+            self, 
+            context, 
+            global_cond = None, 
+            seq = None, 
+            teacher_forcing_ratio = 0.0, 
+            temperature = 1.0, 
+            stop_criterion = None, 
+            prob_threshold = 1e-5, 
+            monotonicity_start_index = 1, 
+            max_ids = None, 
+            buffer_percent = 0.05
+        ):
         """
         context: (B, num_features_in)
         global_cond: (B, num_features_global) -- simply ignored
@@ -197,7 +222,21 @@ class TransformerBase(nn.Module):
 
 
 class Transformer1(TransformerBase): # add logM at first in the sequence
-    def __init__(self, num_condition=1, d_model=128, num_layers=4, num_heads=8, max_length=10, num_features_in=1, num_features_out=1, num_token_types=1, output_features=["SubhaloSFR"], dropout=0, last_activation=nn.Softmax(dim=-1), pred_prob=True):
+    def __init__(
+            self, 
+            num_condition = 1, 
+            d_model = 128, 
+            num_layers = 4, 
+            num_heads = 8, 
+            max_length = 10, 
+            num_features_in = 1, 
+            num_features_out = 1, 
+            num_token_types = 1, 
+            output_features = ["SubhaloSFR"], 
+            dropout = 0, 
+            last_activation = nn.Softmax(dim=-1), 
+            pred_prob = True    
+        ):
         super().__init__(num_condition=num_condition, d_model=d_model, num_layers=num_layers, num_heads=num_heads, max_length=max_length, num_features_in=num_features_in, num_features_out=num_features_out, num_token_types=num_token_types, output_features=output_features, dropout=dropout)
 
         self.embedding_layers = nn.Sequential(
@@ -264,8 +303,22 @@ class Transformer1(TransformerBase): # add logM at first in the sequence
         return x
 
 class Transformer2(TransformerBase): # embed context and x together, and then add positional embedding
-    def __init__(self, num_condition=1, d_model=128, num_layers=4, num_heads=8, max_length=10, num_features_in=1, num_features_out=1, num_token_types=1, output_features=["SubhaloSFR"], dropout=0, last_activation=nn.Softmax(dim=-1), pred_prob=True):
-        
+    def __init__(
+            self, 
+            num_condition = 1, 
+            d_model = 128, 
+            num_layers = 4, 
+            num_heads = 8, 
+            max_length = 10, 
+            num_features_in = 1, 
+            num_features_out = 1, 
+            num_token_types = 1, 
+            output_features = ["SubhaloSFR"], 
+            dropout = 0, 
+            last_activation = nn.Softmax(dim=-1), 
+            pred_prob = True
+        ):
+
         super().__init__(num_condition=num_condition, d_model=d_model, num_layers=num_layers, num_heads=num_heads, max_length=max_length, num_features_in=num_features_in, num_features_out=num_features_out, num_token_types=num_token_types, output_features=output_features, dropout=dropout)
         
         self.start_token = torch.ones(1) 
@@ -332,7 +385,23 @@ class Transformer2(TransformerBase): # embed context and x together, and then ad
 
 
 class TransformerWithGlobalCond(nn.Module): 
-    def __init__(self, num_features_global, transformer_cls=Transformer1, num_condition=1, d_model=128, num_layers=4, num_heads=8, max_length=10, num_features_in=1, num_features_out=1, num_token_types=1, output_features=["SubhaloSFR"], dropout=0, last_activation=nn.Softmax(dim=-1), pred_prob=True):
+    def __init__(
+            self, 
+            num_features_global, 
+            transformer_cls = Transformer1,
+            num_condition = 1, 
+            d_model = 128, 
+            num_layers = 4, 
+            num_heads = 8, 
+            max_length = 10, 
+            num_features_in = 1, 
+            num_features_out = 1, 
+            num_token_types = 1, 
+            output_features = ["SubhaloSFR"], 
+            dropout = 0, 
+            last_activation = nn.Softmax(dim=-1), 
+            pred_prob = True
+        ):
         super().__init__()
 
         self.transformer = transformer_cls(
@@ -366,8 +435,13 @@ class TransformerWithGlobalCond(nn.Module):
 from typing import Optional
 
 class TransformerDecoderLayerWithAttn(nn.TransformerDecoderLayer):
-    def _sa_block(self, x: torch.Tensor, attn_mask: Optional[torch.Tensor],
-                  key_padding_mask: Optional[torch.Tensor], is_causal: bool = False) -> torch.Tensor:
+    def _sa_block(
+            self, 
+            x: torch.Tensor, 
+            attn_mask: Optional[torch.Tensor],
+            key_padding_mask: Optional[torch.Tensor], 
+            is_causal: bool = False
+        ) -> torch.Tensor:
     
         attn_output, attn_weights = self.self_attn(
             x, x, x,
@@ -382,14 +456,44 @@ class TransformerDecoderLayerWithAttn(nn.TransformerDecoderLayer):
     
 
 class Transformer1WithAttn(Transformer1):
-    def __init__(self, num_condition=1, d_model=128, num_layers=4, num_heads=8, max_length=10, num_features_in=1, num_features_out=1, num_token_types=1, output_features=["SubhaloSFR"], dropout=0, last_activation=nn.Softmax(dim=-1), pred_prob=True):
+    def __init__(
+            self, 
+            num_condition = 1, 
+            d_model = 128, 
+            num_layers = 4, 
+            num_heads = 8, 
+            max_length = 10, 
+            num_features_in = 1, 
+            num_features_out = 1, 
+            num_token_types = 1, 
+            output_features = ["SubhaloSFR"], 
+            dropout = 0, 
+            last_activation = nn.Softmax(dim=-1), 
+            pred_prob = True
+        ):
         super().__init__(num_condition=num_condition, d_model=d_model, num_layers=num_layers, num_heads=num_heads, max_length=max_length, num_features_in=num_features_in, num_features_out=num_features_out, num_token_types=num_token_types, output_features=output_features, dropout=dropout, last_activation=last_activation, pred_prob=pred_prob)
+        
         decoder_layer = TransformerDecoderLayerWithAttn(d_model=d_model, nhead=num_heads, batch_first=True, dropout=dropout)
         self.decoder = nn.TransformerDecoder(decoder_layer, num_layers=num_layers)
 
 class Transformer2WithAttn(Transformer2):
-    def __init__(self, num_condition=1, d_model=128, num_layers=4, num_heads=8, max_length=10, num_features_in=1, num_features_out=1, num_token_types=1, output_features=["SubhaloSFR"], dropout=0, last_activation=nn.Softmax(dim=-1), pred_prob=True):
+    def __init__(
+            self, 
+            num_condition = 1, 
+            d_model = 128, 
+            num_layers = 4, 
+            num_heads = 8, 
+            max_length = 10, 
+            num_features_in = 1, 
+            num_features_out = 1, 
+            num_token_types = 1, 
+            output_features = ["SubhaloSFR"], 
+            dropout = 0, 
+            last_activation = nn.Softmax(dim=-1), 
+            pred_prob = True
+        ):
         super().__init__(num_condition=num_condition, d_model=d_model, num_layers=num_layers, num_heads=num_heads, max_length=max_length, num_features_in=num_features_in, num_features_out=num_features_out, num_token_types=num_token_types, output_features=output_features, dropout=dropout, last_activation=last_activation, pred_prob=pred_prob)
+
         decoder_layer = TransformerDecoderLayerWithAttn(d_model=d_model, nhead=num_heads, batch_first=True, dropout=dropout)
         self.decoder = nn.TransformerDecoder(decoder_layer, num_layers=num_layers)
 

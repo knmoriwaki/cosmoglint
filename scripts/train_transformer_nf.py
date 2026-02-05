@@ -93,21 +93,22 @@ def train_model(args):
 
     global_params = load_global_params(args.global_param_file, args.global_features, norm_param_dict=norm_param_dict)
     
-    if "*" in args.data_path[0] and args.indices is not None:
+    data_path = args.data_path.copy()
+    if "*" in data_path[0] and args.indices is not None:
         # Currently only support one data path with *
-        if len(args.data_path) > 1:
+        if len(data_path) > 1:
             raise ValueError("When data_path contains *, only one data path is allowed.")
         
         indices = args.indices.split("-")
         istart = int(indices[0])
         iend = int(indices[1])
         print(f"# Using data files from {istart} to {iend}")
-        args.data_path = [ args.data_path[0].replace("*", str(i)) for i in range(istart, iend+1) ]
+        data_path = [ data_path[0].replace("*", str(i)) for i in range(istart, iend+1) ]
         
         if global_params is not None:
             global_params = global_params[istart:iend+1, :]
 
-    dataset =  MyDataset(args.data_path, args.input_features, args.output_features, global_params=global_params, norm_param_dict=norm_param_dict, max_length=args.max_length, exclude_ratio=args.exclude_ratio, use_flat_representation=False, show_pbar=args.show_pbar)
+    dataset =  MyDataset(data_path, args.input_features, args.output_features, global_params=global_params, norm_param_dict=norm_param_dict, max_length=args.max_length, exclude_ratio=args.exclude_ratio, use_flat_representation=False, show_pbar=args.show_pbar)
     train_size = int(args.train_ratio * len(dataset))
     val_size = len(dataset) - train_size
     train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
