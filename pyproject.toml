@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "cosmoglint"
 version = "1.0.1"
 description = "Transformer-based generative model for galaxies"
-readme = "README.md"
+readme = "README_PYPI.md"
 requires-python = ">=3.9"
 authors = [{ name = "Kana Moriwaki" }]
 license = { file = "LICENSE" }
