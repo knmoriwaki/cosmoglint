@@ -3,7 +3,6 @@ import os
 from argparse import Namespace
 import random
 import numpy as np
-import pandas as pd
 
 import h5py
 
@@ -119,9 +118,8 @@ def load_global_params(global_param_file, global_features, norm_param_dict=None)
 
         global_params = []
         for f in global_param_file:
-            global_params_pd = pd.read_csv(f, sep=r"\s+")
-            global_params_now = global_params_pd[global_features].to_numpy(dtype=np.float32)
-            
+            data = np.genfromtxt(f, names=True, dtype=None, encoding="utf-8")
+            global_params_now = np.vstack([data[name] for name in global_features]).T.astype(np.float32)
             global_params.append(global_params_now)
 
         global_params = np.vstack(global_params)
@@ -256,7 +254,7 @@ class MyDataset(Dataset):
             if len(global_params) != len(path):
                 raise ValueError("The number of global parameter sets must match the number of data files")
 
-        self.x = torch.empty((0, len(input_features)), dtype=torch.float32)
+        x = []
         self.y = []
         self.g = []
 
@@ -274,7 +272,7 @@ class MyDataset(Dataset):
                 print(f"# Loading halo data from {p}")
     
             x_tmp, y_tmp = load_halo_data(p, input_features, output_features, norm_param_dict=norm_param_dict, max_length=max_length, sort=sort, ndata=ndata, exclude_ratio=exclude_ratio, use_excluded_region=use_excluded_region)
-            self.x = torch.cat([self.x, x_tmp], dim=0)
+            x.append(x_tmp) 
             self.y = self.y + y_tmp
 
             if global_params is not None:
@@ -284,6 +282,8 @@ class MyDataset(Dataset):
                 g_tmp = np.zeros((len(x_tmp), 1)) # dummy (Nhalo, 1)
             
             self.g.append( g_tmp )
+
+        self.x = torch.cat(x, dim=0)
 
         if len(self.x) == 0:
             raise ValueError("No halo is found.")

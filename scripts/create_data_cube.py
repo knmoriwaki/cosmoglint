@@ -10,8 +10,6 @@ from tqdm import tqdm
 
 import numpy as np
 
-import pandas as pd
-
 import torch
 
 #from astropy.cosmology import Planck15 as cosmo
@@ -116,8 +114,8 @@ def create_data(args):
 
     # Load global parameters
     if args.global_param_file is not None:
-        global_params = pd.read_csv(args.global_param_file, sep=r"\s+")
-        global_params = global_params.iloc[args.global_param_id]
+        global_params_all = np.genfromtxt(args.global_param_file, names=True, dtype=None, encoding="utf-8")
+        global_params = global_params_all[args.global_param_id]
     else:
         global_params = None
 

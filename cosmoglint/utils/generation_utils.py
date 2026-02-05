@@ -150,7 +150,7 @@ def generate_galaxy_TransNF(args, x_in, global_params=None, verbose=True):
     x_in = torch.from_numpy(x_in).float().to(device)
 
     if global_params is not None:
-        global_params = global_params[opt.global_features].to_numpy(dtype=np.float32)
+        global_params = np.array([global_params[name] for name in opt.global_features], dtype=np.float32)
         for i, key in enumerate(opt.global_features):
             global_params[...,i] = normalize(global_params[...,i], key, opt.norm_param_dict)
         global_params = torch.from_numpy(global_params).float().to(device)
