@@ -61,7 +61,7 @@ Data-related fields (config file):
 - `data_path`: Path(s) to the training data. Data is an hdf5 file that contains properties of halos and galaxies. In addition to those for input and output features, the number of galaxies in each halo (`GroupNsubs`) should be provided. Multiple files can be passed.
 - `data_path_mesh`: Path(s) to the mesh data. Required when using "mesh_conditioned_transformer" or "mesh_sequence_conditioned_transformer".
 - `global_param_file`: Path to the global parameters file(s). The header should include `global_features`. (default: None)
-- `indices`: - `indices`: If the data path contains `*` (e.g., `.../run_*`), it will be expanded by replacing `*` with integers in the specified range (e.g., `0–999`).  
+- `indices`: If the data path contains `*` (e.g., `.../run_*`), it will be expanded by replacing `*` with integers in the specified range (e.g., `0–999`).  
 - `norm_param_file`: Path to the json file that specifies the normalization settings. Each key (e.g., `HaloMass`) maps to a dictionary with `min` / `max` and `norm`. If `norm` is `"log"` or `"log_with_sign"`, the `min` / `max` normalization is applied after the log conversion.
 - `input_features`: List of the input properties (default: `["GroupMass"]`)
 - `output_features`: List of the output properties (default: `["SubhaloSFR", "SubhaloDist", "SubhaloVrad", "SubhaloVtan"]`)
