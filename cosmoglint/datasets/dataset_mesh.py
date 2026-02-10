@@ -116,16 +116,16 @@ class MeshDatasetBase(Dataset):
         
         if not isinstance(args.data_path, list):
             args.data_path = [args.data_path]
-        if not isinstance(args.data_path_dm, list):
-            args.data_path_dm = [args.data_path_dm]
+        if not isinstance(args.data_path_mesh, list):
+            args.data_path_mesh = [args.data_path_mesh]
 
-        if len(args.data_path) != len(args.data_path_dm):
-            raise ValueError("The number of paths and path_dm must be the same.")
+        if len(args.data_path) != len(args.data_path_mesh):
+            raise ValueError("The number of paths and path_mesh must be the same.")
         
         self.x = []
         self.y = []
 
-        for i, (p, p_dm) in enumerate(zip(args.data_path, args.data_path_dm)):
+        for i, (p, p_dm) in enumerate(zip(args.data_path, args.data_path_mesh)):
             dm_density, pixel_size = load_mesh_data(p_dm, args.input_features, args.norm_param_dict)
             gal_data = load_galaxy_data(p, args.output_features, args.norm_param_dict)
             x_tmp, y_tmp = get_random_patches(dm_density, gal_data, args.ndata, args.npix_patch, pixel_size, args.output_features, max_length=args.max_length, sort=sort, exclude_ratio=exclude_ratio, use_excluded_region=use_excluded_region, show_pbar=show_pbar)

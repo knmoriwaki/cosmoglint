@@ -8,66 +8,65 @@ from torch.distributions import Categorical
 
 import torch.nn.functional as F
 
-def transformer_model(args, **kwargs):
+def transformer_model(cfg, **kwargs):
     
-    if "transformer" in args.model_name:
-        if args.model_name == "transformer1":
+    if "transformer" in cfg.model_name:
+        if cfg.model_name == "transformer1":
             model_class = Transformer1
-        elif args.model_name == "transformer2":
+        elif cfg.model_name == "transformer2":
             model_class = Transformer2
-        elif args.model_name == "mesh_conditioned_transformer":
+        elif cfg.model_name == "mesh_conditioned_transformer":
             model_class = MeshConditionedXAttnTransformer
-        elif args.model_name == "mesh_sequence_conditioned_transformer":
+        elif cfg.model_name == "mesh_sequence_conditioned_transformer":
             model_class = MeshSequenceConditionedXAttnTransformer
-        elif args.model_name == "transformer1_with_global_cond":
+        elif cfg.model_name == "transformer1_with_global_cond":
             model_class = TransformerWithGlobalCond
             transformer_cls = Transformer1
-        elif args.model_name == "transformer2_with_global_cond":
+        elif cfg.model_name == "transformer2_with_global_cond":
             model_class = TransformerWithGlobalCond
             transformer_cls = Transformer2
-        elif args.model_name == "transformer1_with_attn":
+        elif cfg.model_name == "transformer1_with_attn":
             model_class = Transformer1WithAttn
-        elif args.model_name == "transformer2_with_attn":
+        elif cfg.model_name == "transformer2_with_attn":
             model_class = Transformer2WithAttn
         else:
-            raise ValueError(f"Invalid model: {args.model_name}")
+            raise ValueError(f"Invalid model: {cfg.model_name}")
 
-        if len(args.output_features) != args.num_features_in:
-            raise ValueError(f"num_features ({args.num_features_in}) is not consistent with the list of output features ({args.output_features})")      
+        if len(cfg.output_features) != cfg.num_features_in:
+            raise ValueError(f"num_features ({cfg.num_features_in}) is not consistent with the list of output features ({cfg.output_features})")      
           
         common_args = dict(
-            d_model=args.d_model,
-            num_layers=args.num_layers,
-            num_heads=args.num_heads,
-            num_features_cond=args.num_features_cond,
-            num_features_out=args.num_features_out,
-            output_features=args.output_features,
+            d_model=cfg.d_model,
+            num_layers=cfg.num_layers,
+            num_heads=cfg.num_heads,
+            num_features_cond=cfg.num_features_cond,
+            num_features_out=cfg.num_features_out,
+            output_features=cfg.output_features,
             **kwargs,
         )
 
-        if args.use_flat_representation:
-            common_args["max_length"] = args.max_length * args.num_features_in
+        if cfg.use_flat_representation:
+            common_args["max_length"] = cfg.max_length * cfg.num_features_in
             common_args["num_features_in"] = 1
-            common_args["num_token_types"] = args.num_features_in
+            common_args["num_token_types"] = cfg.num_features_in
         
         else:
-            common_args["max_length"] = args.max_length 
-            common_args["num_features_in"] = args.num_features_in
+            common_args["max_length"] = cfg.max_length 
+            common_args["num_features_in"] = cfg.num_features_in
             common_args["num_token_types"] = 1
         
         
-        if "with_global_cond" in args.model_name:
-            common_args["num_features_global"] = args.num_features_global
+        if "with_global_cond" in cfg.model_name:
+            common_args["num_features_global"] = cfg.num_features_global
             common_args["transformer_cls"] = transformer_cls
 
-        if "mesh" in args.model_name:
-            common_args["cond_npix"] = args.npix_patch
-
+        if "mesh" in cfg.model_name:
+            common_args["cond_npix"] = cfg.npix_patch
 
         model = model_class(**common_args)
 
     else:
-        raise ValueError(f"Invalid model: {args.model}")
+        raise ValueError(f"Invalid model: {cfg.model}")
 
     return model
 
@@ -79,8 +78,7 @@ class TransformerBase(nn.Module):
             num_features_in = 1, 
             num_features_out = 1, 
             num_token_types = 1, 
-            output_features = ["SubhaloSFR"], 
-            central_values = {"SubhaloDist": 0.0, "SubhaloVrad": 0.5}, 
+            output_features = None, 
         ):
         super().__init__()
 
@@ -90,10 +88,11 @@ class TransformerBase(nn.Module):
         self.num_features_out = num_features_out
         self.num_token_types = num_token_types
 
+        if output_features is None:
+            output_features = ["" for _ in range(num_features_in)]
         self.output_idx_map = {name: i for i, name in enumerate(output_features)}
         self.output_features = output_features
-        self.central_values = central_values
-
+        
         # Pisitional embedding
         actual_max_length = max_length // num_token_types
         self.pos_embedding = nn.Embedding(actual_max_length, d_model)
@@ -117,6 +116,7 @@ class TransformerBase(nn.Module):
         return torch.where(mask, zero_tensor, x)
     
     def calc_loss(self, batch, weight=None):
+        
         device = next(self.parameters()).device
         seq = batch["target"].to(device)     # (batch, max_length, num_features_in)
         mask = batch["mask"].to(device)   # (batch, max_length)
@@ -165,7 +165,8 @@ class TransformerBase(nn.Module):
             prob_threshold = 1e-5, 
             monotonicity_start_index = 1, 
             max_ids = None, 
-            buffer_percent = 0.05
+            buffer_percent = 0.05,
+            first_values = {"SubhaloDist": 0.0, "SubhaloVrad": 0.5},
         ):
         """
         condition: a dict of conditions
@@ -242,17 +243,17 @@ class TransformerBase(nn.Module):
 
                 mask_all_batch = torch.ones(batch_size, dtype=torch.bool).to(device)
                 
-                # Set the central galaxy's parameters to fixed values
+                # Set the first galaxy's parameters to fixed values
                 is_first_gal = ( t // self.num_token_types == 0 )
                 if is_first_gal:
                     if self.num_token_types == 1:
-                        for feat, cval in self.central_values.items():
+                        for feat, cval in first_values.items():
                             idx = self.output_idx_map.get(feat)
                             if idx is not None:
                                 next_token[:, idx] = cval + self._set_to_zero(next_token[:, idx], mask_all_batch)
                     else:
                         feat = self.output_features[token_type]
-                        cval = self.central_values.get(feat)
+                        cval = first_values.get(feat)
                         if cval is not None:
                             next_token[:, 0] = cval + self._set_to_zero(next_token[:, 0], mask_all_batch)
 
@@ -273,15 +274,15 @@ class TransformerBase(nn.Module):
 class Transformer1(TransformerBase): # add logM at first in the sequence
     def __init__(
             self, 
-            num_features_cond = 1, 
             d_model = 128, 
             num_layers = 4, 
             num_heads = 8, 
             max_length = 10, 
+            num_features_cond = 1, 
             num_features_in = 1, 
             num_features_out = 1, 
             num_token_types = 1, 
-            output_features = ["SubhaloSFR"], 
+            output_features = None, 
             dropout = 0, 
             last_activation = nn.Softmax(dim=-1), 
             pred_prob = True    
@@ -312,7 +313,6 @@ class Transformer1(TransformerBase): # add logM at first in the sequence
 
         self.out_activation = last_activation
         
-
     def forward(self, condition, x, global_cond=None, cond_mask=None):
         """
         condition: (batch, num_features_cond)
@@ -368,7 +368,7 @@ class Transformer2(TransformerBase): # embed condition and x together, and then 
             num_features_in = 1, 
             num_features_out = 1, 
             num_token_types = 1, 
-            output_features = ["SubhaloSFR"], 
+            output_features = None, 
             dropout = 0, 
             last_activation = nn.Softmax(dim=-1), 
             pred_prob = True
@@ -459,7 +459,7 @@ class TransformerWithGlobalCond(nn.Module):
             num_features_in = 1, 
             num_features_out = 1, 
             num_token_types = 1, 
-            output_features = ["SubhaloSFR"], 
+            output_features = None, 
             dropout = 0, 
             last_activation = nn.Softmax(dim=-1), 
             pred_prob = True
@@ -533,7 +533,7 @@ class Transformer1WithAttn(Transformer1):
             num_features_in = 1, 
             num_features_out = 1, 
             num_token_types = 1, 
-            output_features = ["SubhaloSFR"], 
+            output_features = None, 
             dropout = 0, 
             last_activation = nn.Softmax(dim=-1), 
             pred_prob = True
@@ -554,7 +554,7 @@ class Transformer2WithAttn(Transformer2):
             num_features_in = 1, 
             num_features_out = 1, 
             num_token_types = 1, 
-            output_features = ["SubhaloSFR"], 
+            output_features = None, 
             dropout = 0, 
             last_activation = nn.Softmax(dim=-1), 
             pred_prob = True
@@ -583,7 +583,7 @@ class XAttnTransformer(TransformerBase):
             num_features_in = 1, 
             num_features_out = 1, 
             num_token_types = 1, 
-            output_features = ["SubhaloSFR"], 
+            output_features = None, 
             dropout = 0, 
             last_activation = nn.Softmax(dim=-1), 
             pred_prob = True
@@ -799,7 +799,7 @@ class MeshConditionedXAttnTransformer(nn.Module):
             num_features_in = 1, 
             num_features_out = 1, 
             num_token_types = 1, 
-            output_features = ["SubhaloSFR"], 
+            output_features = None, 
             dropout = 0, 
             last_activation = nn.Softmax(dim=-1), 
             pred_prob = True
@@ -823,7 +823,10 @@ class MeshConditionedXAttnTransformer(nn.Module):
         self.mesh_encoder = MeshEncoder(npix=cond_npix, d_model=d_model, in_channels=num_features_cond)
 
     def _encode(self, condition):
-        mesh = condition["mesh3d"]
+        if isinstance(mesh, dict):
+            mesh = condition["mesh3d"]
+        else:
+            mesh = condition
         cond_emb = self.mesh_encoder(mesh) # (batch, cond_length, d_model)
 
         return cond_emb
@@ -848,7 +851,7 @@ class MeshSequenceConditionedXAttnTransformer(nn.Module):
             num_features_in = 1, 
             num_features_out = 1, 
             num_token_types = 1, 
-            output_features = ["SubhaloSFR"], 
+            output_features = None, 
             dropout = 0, 
             last_activation = nn.Softmax(dim=-1), 
             pred_prob = True

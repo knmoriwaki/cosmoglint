@@ -1,7 +1,7 @@
 # data
 data_path:
   - ../../map2points/dataset/TNG300-1/TNG300-1_33.h5
-data_path_dm:
+data_path_mesh:
   - ../../map2points/dataset/TNG300-3-Dark/TNG300-3-Dark_dm_33_keep0.10_npix256.h5
 global_param_file: null
 indices: null

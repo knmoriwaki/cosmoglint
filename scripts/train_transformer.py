@@ -16,12 +16,6 @@ from cosmoglint.datasets import HaloDataset, MeshDataset, MeshCtxDataset
 from cosmoglint.utils.io_utils import load_global_params
 from cosmoglint.model.transformer import transformer_model
 
-DATASET_REGISTRY = {
-    "halo": HaloDataset,
-    "mesh": MeshDataset,
-    "mesh_ctx": MeshCtxDataset
-}
-
 def parse_args():
 
     parser = argparse.ArgumentParser()
@@ -102,6 +96,12 @@ def train_model(args):
             global_params = global_params[istart:iend+1, :]
 
     dataset_class = DATASET_REGISTRY[args.dataset]
+    if args.model_name == "mesh_conditioned_transformer": 
+        dataset_class = MeshDataset
+    elif args.model_name == "mesh_sequence_conditioned_transformer":
+        dataset_class = MeshCtxDataset
+    else:
+        dataset_class = HaloDataset
     dataset = dataset_class(args, global_params=global_params, exclude_ratio=args.exclude_ratio, show_pbar=args.show_pbar)
     train_size = int(args.train_ratio * len(dataset))
     val_size = len(dataset) - train_size
@@ -184,7 +184,6 @@ def train_model(args):
             scheduler.step()
             
             # save model
-            
             if (epoch + 1) % args.save_freq == 0 or epoch + 1 == args.num_epochs: 
                 fname = "{}/model_ep{:d}.pth".format(args.output_dir, epoch+1)
                 torch.save(model.state_dict(), fname)
