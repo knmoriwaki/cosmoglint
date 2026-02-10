@@ -17,7 +17,7 @@ from astropy.cosmology import FlatLambdaCDM
 cosmo = FlatLambdaCDM(H0=67.74, Om0=0.3089)
 import astropy.units as u
 
-from cosmoglint.utils.io_utils import normalize, namespace_to_dict,load_mesh_data, get_index_list, save_intensity_data
+from cosmoglint.utils.io_utils import normalize, namespace_to_dict,load_mesh_data, get_index_list, save_hdf5_intensity_data, save_hdf5_catalog_data
 from cosmoglint.sampling import sample_galaxies_from_mesh_continuous
 
 cspeed = 3e10 # [cm/s]
@@ -58,26 +58,6 @@ def parse_args():
 
     return parser.parse_args()
 
-def save_hdf5_catalog_data(data, args, output_features, output_fname):
-    from collections import defaultdict
-    args_dict = vars(args)
-    args_dict = {k: (v if v is not None else "None") for k, v in args_dict.items()}
-
-    groups = defaultdict(list)
-    for i, name in enumerate(output_features):
-        prefix = name.split(":", 1)[0] 
-        groups[prefix].append(i)
-
-    # Save
-    with h5py.File(output_fname, 'w') as f:
-        for key, idxs in groups.items():
-            arr = data[:, idxs]            
-            f.create_dataset(key, data=arr, compression="gzip")
-
-        for key, value in args_dict.items():
-            f.attrs[key] = value
-
-    print(f"# Catalog saved to {output_fname}")
 
 
 def create_data(args):
@@ -224,8 +204,9 @@ def create_data(args):
             valid_mask = val > args.threshold
             intensity = make_intensity_map(pos, val)
             intensities.append(intensity)
+        keys = ["intensity", "intensity_rsd"]
 
-        save_intensity_data(intensities, args, args.output_fname)
+        save_hdf5_intensity_data(intensities, args, keys, args.output_fname)
 
     ### Save galaxy catalog
     if args.output_catalog_fname != "none":

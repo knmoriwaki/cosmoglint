@@ -9,26 +9,28 @@ import h5py
 import torch
 
 
-def my_save_model(model, fname):
-    torch.save(model.state_dict(), fname)
-    print(f"# Model saved to {fname}")
+def save_hdf5_catalog_data(data, args, output_features, output_fname):
+    args_dict = vars(args)
+    args_dict = {k: (v if v is not None else "None") for k, v in args_dict.items()}
 
+    from collections import defaultdict
+    groups = defaultdict(list)
+    for i, name in enumerate(output_features):
+        prefix = name.split(":", 1)[0] 
+        groups[prefix].append(i)
 
-def save_catalog_data(pos_list, value, args, output_fname):
-    if not isinstance(pos_list, list):
-        pos_list = [pos_list]
+    # Save
+    with h5py.File(output_fname, 'w') as f:
+        for key, idxs in groups.items():
+            arr = data[:, idxs]            
+            f.create_dataset(key, data=arr, compression="gzip")
 
-    with open(output_fname, 'w') as f:
-        for i, v in enumerate(value):
-            f.write(f"{pos_list[0][i, 0]} {pos_list[0][i, 1]} ")
-            for pos in pos_list:
-                f.write(f"{pos[i, 2]} ")
-
-            f.write(f"{v}\n")
+        for key, value in args_dict.items():
+            f.attrs[key] = value
 
     print(f"# Catalog saved to {output_fname}")
 
-def save_intensity_data(intensity, args, output_fname):
+def save_hdf5_intensity_data(intensity, args, output_features, output_fname):
     args_dict = vars(args)
     args_dict = {k: (v if v is not None else "None") for k, v in args_dict.items()}
 
@@ -36,10 +38,13 @@ def save_intensity_data(intensity, args, output_fname):
         intensity = [intensity]
     
     with h5py.File(output_fname, 'w') as f:
-        for i, d in enumerate(intensity):
-            f.create_dataset(f'intensity{i}', data=d)    
+
+        for key, d in enumerate(zip(output_features, intensity)):
+            f.create_dataset(key, data=d)    
+
         for key, value in args_dict.items():
             f.attrs[key] = value
+
     print(f"# Data cube saved as {output_fname}")
 
 def safe_index(lst, key):

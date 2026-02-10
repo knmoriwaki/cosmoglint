@@ -16,7 +16,7 @@ import torch
 from astropy.cosmology import FlatLambdaCDM
 cosmo = FlatLambdaCDM(H0=67.74, Om0=0.3089)
 
-from cosmoglint.utils.io_utils import save_intensity_data, save_catalog_data
+from cosmoglint.utils.io_utils import save_hdf5_intensity_data
 
 cspeed = 3e10 # [cm/s]
 micron = 1e-4 # [cm]
@@ -59,6 +59,21 @@ def parse_args():
     parser.add_argument("--monotonicity_start_index", type=int, default=1)
 
     return parser.parse_args()
+
+
+def my_save_catalog_data(pos_list, value, args, output_fname):
+    if not isinstance(pos_list, list):
+        pos_list = [pos_list]
+
+    with open(output_fname, 'w') as f:
+        for i, v in enumerate(value):
+            f.write(f"{pos_list[0][i, 0]} {pos_list[0][i, 1]} ")
+            for pos in pos_list:
+                f.write(f"{pos[i, 2]} ")
+
+            f.write(f"{v}\n")
+
+    print(f"# Catalog saved to {output_fname}")
 
 def create_data(args):
     import astropy.units as u
@@ -168,7 +183,7 @@ def create_data(args):
                 pos_valid = p[valid_mask]
                 value_valid = value[valid_mask]
 
-            save_catalog_data(pos_valid, value_valid, args, args.output_fname)
+            my_save_catalog_data(pos_valid, value_valid, args, args.output_fname)
 
         else:        
             intensities = []
@@ -187,7 +202,7 @@ def create_data(args):
 
                 intensities.append(intensity)
 
-            save_intensity_data(intensities, args, args.output_fname)
+            save_hdf5_intensity_data(intensities, args, args.output_fname)
 
     else:
         if "Transformer_NF" in args.model_dir:
@@ -261,7 +276,7 @@ def create_data(args):
                 valid_mask = sfr > args.catalog_threshold
                 pos_valid.append(pos[valid_mask])
                 sfr_valid = sfr[valid_mask]
-            save_catalog_data(pos_valid, sfr_valid, args, args.output_fname)
+            my_save_catalog_data(pos_valid, sfr_valid, args, args.output_fname)
 
         else:
             print("# Assign galaxies to pixels")
@@ -281,7 +296,7 @@ def create_data(args):
                 intensity = make_intensity_map(pos, sfr)
                 intensities.append(intensity)
 
-            save_intensity_data(intensities, args, args.output_fname)
+            save_hdf5_intensity_data(intensities, args, args.output_fname)
 
 
 if __name__ == "__main__":
