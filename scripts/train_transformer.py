@@ -11,8 +11,6 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader, WeightedRandomSampler
 from torch.utils.data import random_split
-from torch.distributions import Beta
-import torch.nn.functional as F
 
 from cosmoglint.datasets import HaloDataset, MeshDataset, MeshCtxDataset
 from cosmoglint.utils.io_utils import load_global_params
@@ -110,16 +108,18 @@ def train_model(args):
     train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
 
     def get_sampler(x, nbins=20, xmin=args.sampler_xmin, xmax=args.sampler_xmax, temperature=1, weight_min=1e-8):
+        x = x.detach().to("cpu")
         bins = torch.linspace(xmin, xmax, steps=nbins+1)
-        bin_indices = torch.bucketize(x, bins)
-        counts = torch.bincount(bin_indices)
+        bin_indices = torch.bucketize(x, bins, right=False) - 1
+        bin_indices = bin_indices.clamp(0, nbins-1)
+        counts = torch.bincount(bin_indices, minlength=nbins).to(torch.double)
         weights = 1. / counts[bin_indices] 
         weights = weights.pow(temperature) # Apply temperature scaling
         weights = weights.clamp(min=weight_min) # Avoid zero weights
         # When setting replacement to True and num_samples to the original number of samples, the sampler can select the same sample multiple times even within a single epoch.
         # The minimum weight is set to balance the sampling (few samples appear less frequently than when minimum is not set) 
         # Large minimum weight (larger than ~1e-5: the maximum number of halo mass function at z = 2) means the rare samples will be sampled more frequently (could suffer from overfitting, but might be faster to converge)
-        return WeightedRandomSampler(weights.tolist(), len(weights), replacement=True)
+        return WeightedRandomSampler(weights, len(weights), replacement=True)
     
     if args.sampler_weight_min < 1:
         x = train_dataset.dataset.x[train_dataset.indices]
@@ -148,44 +148,6 @@ def train_model(args):
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-5)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.num_epochs, eta_min=1e-6)
 
-    def loss_func(batch, weight=None):
-
-        seq = batch["target"].to(device)     # (batch, max_length, num_features_in)
-        mask = batch["mask"].to(device)   # (batch, max_length)
-        condition = batch["condition"]
-
-        if isinstance(condition, dict):
-            condition = {k: v.to(device) for k, v in condition.items()}
-        else:
-            condition = condition.to(device)
-        global_cond = batch["global_cond"].to(device) # (batch, num_features_global)
-        
-        input_seq = seq[:, :-1]
-        target = seq
-
-        output = model(condition, input_seq, global_cond=global_cond) # (batch, max_length, num_features_in, num_features_out)
-        #_, output = model.generate(condition, seq=seq, teacher_forcing_ratio=teacher_forcing_ratio) 
-        # output: (batch, max_length, num_features_in, num_features_out)
-
-        batch_size, seq_length, num_features_in, num_features_out = output.shape
-        if weight is None:
-            weight = torch.ones_like(target, dtype=torch.float32, device=target.device) # (batch, seq_length)
-
-        weight = mask * weight
-
-        log_prob = torch.log( output + 1e-8 )
-        target_bins = (target * num_features_out).long() # (batch, seq_length, num_features_in) [0, 1] -> [0, num_features_out-1]
-        target_bins = torch.clamp(target_bins, min=0, max=num_features_out - 1)
-
-        log_prob_flatten = log_prob.contiguous().view(-1, num_features_out) # (batch * seq_length * num_features_in, num_features_out)
-        target_bins_flatten = target_bins.contiguous().view(-1) # (batch * seq_length * num_features_in, )
-        weight_flatten = weight.contiguous().view(-1) # (batch * seq_length * num_features_in, )
-
-        loss_nll = F.nll_loss(log_prob_flatten, target_bins_flatten, reduction='none') 
-        loss = (loss_nll * weight_flatten).sum() / ( (weight_flatten).sum() + 1e-8 )
-
-        return loss
-
     fname_log = "{}/log.txt".format(args.output_dir)
 
     with open(fname_log, "w") as f:
@@ -202,7 +164,7 @@ def train_model(args):
 
             for count, batch in enumerate(train_dataloader):
                 optimizer.zero_grad()
-                loss = loss_func(batch) #, weight=weight)
+                loss = model.calc_loss(batch) #, weight=weight)
 
                 loss.backward()
                 optimizer.step()
@@ -210,7 +172,7 @@ def train_model(args):
                 model.eval()
                 for batch_val in val_dataloader:
                     with torch.no_grad():
-                        loss_val = loss_func(batch_val)
+                        loss_val = model.calc_loss(batch_val)
                         break # show one batch result only
                 model.train()
 
