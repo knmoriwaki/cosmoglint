@@ -48,39 +48,33 @@ pip install git+https://github.com/knmoriwaki/cosmoglint.git
 Load model:
 ```python
 import json
-from cosmoglint.model.transformer import transformer_model
+from cosmoglint.model.transformer import Transformer1
 
-with open(f"args.json", "r") as f:
-  option = json.load(f, object_hook=lambda d: argparse.Namespace(**d))
-  
-model = transformer_model(option)
-```
-with a json file (example):
-```json
-{"model_name": "transformer1", "max_length": 50, "d_model": 128, "num_layers": 4, "num_heads": 8, "num_features_out": 100, "num_features_in": 4}
+cfg = {"max_length": 50, "d_model": 128, "num_layers": 4, "num_heads": 8, "num_features_cond": 1, "num_features_in": 4, "num_features_out": 100}
+model = Transformer1(**cfg)
 ```
 
 Predict probability:
 ```python
-prob = model(context, x) 
+prob = model(condition, seq) 
 ```
 
 Generate new galaxies:
 ```python
-generated, prob = model.generate(context, x, prob_threshold=1e-5)
+generated, prob = model.generate(condition, seq=seq, prob_threshold=1e-5)
 ```
 
 Input:
-- `context`: a tensor of shape `(N, C_h)`, containing the properties of halo.
-- `x`: a tensor of shape `(N, L, C_g)`, containing the properties of up to `L` galaxies for each of the `N` halos in the batch. Each feature vector of size `C_g` may include, for example, the halo mass, relative distance to the halo center, radial velocity, and tangential velocity. Input `None` to generate from scratch.
+- `condition`: a tensor of shape `(B, C_h)`, containing the properties of halo. 
+- `seq`: a tensor of shape `(B, L, C_g)`, containing the properties of up to `L` galaxies for each of the `N` halos in the batch. Each feature vector of size `C_g` may include, for example, the halo mass, relative distance to the halo center, radial velocity, and tangential velocity. Set to `None` to generate galaxies from scratch.
 - `prob_threshold` (optional): when sampling, the probability below this threshold is set to zero.
 
 Output:
-- `prob`: a tensor of shape `(N, L, C_g, d)`. `prob[i,j,k,:]` is the probability distribution over `d` bins for the k-th parameter of the **(j+1)-th galaxy** in the sequence for the i-th batch element. 
-- `generated`: a tensor of shape `(N, L, C_g)`. `generated[i,j,k]` is the sampled values for each parameter of **(j+1)-th galaxy** in the sequence for the i-th batch element.
+- `prob`: a tensor of shape `(B, L, C_g, d)`. `prob[i,j,k,:]` is the probability distribution over `d` bins for the k-th parameter of the **(j+1)-th galaxy** in the sequence for the i-th batch element. 
+- `generated`: a tensor of shape `(B, L, C_g)`. `generated[i,j,k]` is the sampled values for each parameter of **(j+1)-th galaxy** in the sequence for the i-th batch element.
 
 Shape: 
-- `N`: Batch size 
+- `B`: Batch size 
 - `L`: Sequence length 
 - `C_h`: Number of halo properties 
 - `C_g`: Number of galaxy properties predicted 
@@ -89,13 +83,21 @@ Shape:
 Options:
 | Key                    | Description                                                                                                                                                                |
 |------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **`model_name`**       | Name or identifier for the model configuration (default: `"transformer1"`). Available options are:<br> - `"transformer1"`: halo is prepended to the sequence<br> - `"transformer2"`: halo and galaxy features are embedded together | |
 | **`max_length`**       | Maximum number of galaxies (sequence length) the model will process per halo.|
 | **`d_model`**          | Dimensionality of the internal feature space (i.e., size of the token embeddings and hidden layers in the transformer).                             |
 | **`num_layers`**       | Number of transformer decoder layers stacked in the model.                                          |
 | **`num_heads`**        | Number of attention heads in the multi-head self-attention layers.                                       |
+| **`num_features_cond`** | NUmber of features per halo (e.g., halo mass)                 |
 | **`num_features_out`** | Total number of output bins for the probability distribution.  |
 | **`num_features_in`**  | Number of features per galaxy (e.g., SFR, relative distance, radial/tangential velocity).     |
+
+Models:
+| Class                    | Description                                                                                                                                                                |
+|------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **`Transformer1`**       | halo is prepended to the sequence |
+| **`Transformer2`** | halo and galaxy features are embedded together |
+| **`MeshConditionedTransformer`** | 3d mesh data is encoded in a sequence and decoded with the target sequence. `condition` should be a tensor of shape `(B, C_h, N, N, N)` |
+| **`MeshSequenceConditionedTransformer`** |  3d mesh and context sequence data is encoded in a sequence and decoded with the target sequence. `condition` should be a dict including "mesh" `(B, C_h, N, N, N)`, "context" `(B, L_ctx, C_g)`, "mask_ctx" `(B, L_ctx)`, "boundary" `(B, 6)`. |
 
 
 ---
@@ -114,25 +116,36 @@ pip install -r requirements.txt
 Example:
 ```bash
 cd scripts
-python train_transformer.py --data_path [data_path] --norm_param_file [norm_param_file] 
+python train_transformer.py --config_file [config_file] 
 ```
 
-Important options:
-- `--data_path`: Path(s) to the training data. Data is an hdf5 file that contains properties of halos and galaxies. In addition to those for input and output features, the number of galaxies in each halo (`GroupNsubs`) should be provided. Multiple files can be passed.
-- `--norm_param_file`: Path to the json file that specifies the normalization settings. Each key (e.g., `HaloMass`) maps to a dictionary with `min` / `max` and `norm`. If `norm` is `"log"` or `"log_with_sign"`, the `min` / `max` normalization is applied after the log conversion.
-- `--input_features`: List of the input properties (default: `["GroupMass"]`)
-- `--output_features`: List of the output properties (default: `["SubhaloSFR", "SubhaloDist", "SubhaloVrad", "SubhaloVtan"]`)
-- `--max_length`: Maximum number of galaxies (sequence length) per halo (default: 30).
-- `--use_flat_representation`: If true, use flattened point features (B, N * M). If false, keep (B, N, M). Use `--no-use_flat_representation` to set it to false (default: true).
+The config file is a YAML file that specifies the details of the dataset and the model.
 
-Other options:
+Model-related fields (config file):
+- `model_name`: Name of the model architecture to use (default: "transformer1"). 
+- `d_model`: Dimensionality of the transformer’s internal feature representation (default: 128).
+- `num_layers`: Number of transformer encoder layers (default: 4).
+- `num_heads`: Number of attention heads in each multi-head attention layer (default: 8).
+- `num_features_out`: Total number of output bins across all predicted parameters. Typically C × d, where C is the number of output features and d is the number of bins per parameter.
+
+Data-related fields (config file):
+- `data_path`: Path(s) to the training data. Data is an hdf5 file that contains properties of halos and galaxies. In addition to those for input and output features, the number of galaxies in each halo (`GroupNsubs`) should be provided. Multiple files can be passed.
+- `data_path_mesh`: Path(s) to the mesh data. Required when using "mesh_conditioned_transformer" or "mesh_sequence_conditioned_transformer".
+- `global_param_file`: Path to the global parameters file(s). The header should include `global_features`. (default: None)
+- `indices`: 
+- `norm_param_file`: Path to the json file that specifies the normalization settings. Each key (e.g., `HaloMass`) maps to a dictionary with `min` / `max` and `norm`. If `norm` is `"log"` or `"log_with_sign"`, the `min` / `max` normalization is applied after the log conversion.
+- `input_features`: List of the input properties (default: `["GroupMass"]`)
+- `output_features`: List of the output properties (default: `["SubhaloSFR", "SubhaloDist", "SubhaloVrad", "SubhaloVtan"]`)
+- `global_features`: List of global properties. If not None, `global_param_file` should be provided (default: None)
+- `max_length`: Maximum number of galaxies (sequence length) per halo (default: 30).
+- `use_flat_representation`: If true, use flattened point features (B, N * M). If false, keep (B, N, M). 
+
+
+Command-line options:
 - `--gpu_id`: ID of the GPU to use (default: "0"). Accepts string values like "0", "1", etc.
 - `--seed`: Random seed for reproducibility (default: 12345).
 - `--show_pbar`: Show progress bar. Use `--no-show_pbar` to disable progress bar. (default: True)
 - `--output_dir`: Directory where outputs (e.g., model checkpoints, logs) will be saved (default: "output").
-- `--global_features`: List of global properties. If not None, `global_param_file` should be provided (default: None)
-- `--global_param_file`: Path to the global parameters file(s). The header should include `global_features`. (default: None)
-
 - `--train_ratio`: Fraction of the data to use for training (the rest is used for validation). Default is 0.9.
 - `--exclude_ratio`: The cubic region whose side length is `BoxSize` multiplied by this ratio is not used for training. `BoxSize` and `GroupPos` should be provided in the data file if a positive ratio is set.
 - `--batch_size`: Number of halo sequences per batch (default: 128).
@@ -140,16 +153,7 @@ Other options:
 - `--lr`: Learning rate for the optimizer (default: 1e-3).
 - `--dropout`: Dropout rate used in the model (default: 0.0).
 - `--sampler_weight_min`: Minimum weight for the sampler. Set to < 1 to use a sampler that balances the training data based on halo's primary property (e.g., halo mass), otherwise the sampler is not used. 
-- `--lambda_penalty_loss`: Coefficient for the penalty loss.
 - `--save_freq`: Frequency (in epochs) at which the model is saved during training (default: 100).
-
-- `--model_name`: Name of the model architecture to use (default: "transformer1"). 
-- `--d_model`: Dimensionality of the transformer’s internal feature representation (default: 128).
-- `--num_layers`: Number of transformer encoder layers (default: 4).
-- `--num_heads`: Number of attention heads in each multi-head attention layer (default: 8).
-- `--num_features_out`: Total number of output bins across all predicted parameters. Typically C × d, where C is the number of output features and d is the number of bins per parameter.
-
-Note: `num_features_in` is automatically determined from the shape of dataset
 
 ---
 
@@ -263,9 +267,9 @@ Other options:
 
 ## Notebooks
 
-- `plot_transformer.ipynb`: visualize training results 
-- `plot_data_cube.ipynb`: visualize created data cube
-- `plot_lightcone.ipynb`: visualize created light cone mock 
+- `quick_check_halo.ipynb`, `quick_check_mesh.ipynb`: For quick look at training results 
+- `gen_analysis_halo.ipynb`, `gen_analysis_mesh.ipynb`: Visualize and analyse created data
+- `gen_analysis_lightcone_halo.ipynb`: Visualize and analyse created light cone data
 
 ## Other models
 

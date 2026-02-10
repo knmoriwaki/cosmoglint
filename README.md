@@ -43,16 +43,32 @@ pip install -r requirements.txt
 
 Example:
 ```bash
-python train_transformer.py --data_path [data_path] --norm_param_file [norm_param_file] 
+cd scripts
+python train_transformer.py --config_file [config_file] 
 ```
 
-Options:
-- `--data_path`: Path(s) to the training data. Data is an hdf5 file that contains properties of halos and galaxies. In addition to those for input and output features, the number of galaxies in each halo (`GroupNsubs`) should be provided. Multiple files can be passed.
-- `--norm_param_file`: Path to the json file that specifies the normalization settings. Each key (e.g., `HaloMass`) maps to a dictionary with `min` / `max` and `norm`. If `norm` is `"log"` or `"log_with_sign"`, the `min` / `max` normalization is applied after the log conversion.
-- `--input_features`: List of the input properties (default: `["GroupMass"]`)
-- `--output_features`: List of the output properties (default: `["SubhaloSFR", "SubhaloDist", "SubhaloVrad", "SubhaloVtan"]`)
-- `--max_length`: Maximum number of galaxies (sequence length) per halo (default: 30).
-- `--use_flat_representation`: If true, use flattened point features (B, N * M). If false, keep (B, N, M). Use `--no-use_flat_representation` to set it to false (default: true).
+The config file is a YAML file that specifies the details of the dataset and the model.
+
+
+Model-related fields (config file):
+- `model_name`: Name of the model architecture to use (default: "transformer1"). 
+- `d_model`: Dimensionality of the transformer’s internal feature representation (default: 128).
+- `num_layers`: Number of transformer encoder layers (default: 4).
+- `num_heads`: Number of attention heads in each multi-head attention layer (default: 8).
+- `num_features_out`: Total number of output bins across all predicted parameters. Typically C × d, where C is the number of output features and d is the number of bins per parameter.
+
+Data-related fields (config file):
+- `data_path`: Path(s) to the training data. Data is an hdf5 file that contains properties of halos and galaxies. In addition to those for input and output features, the number of galaxies in each halo (`GroupNsubs`) should be provided. Multiple files can be passed.
+- `data_path_mesh`: Path(s) to the mesh data. Required when using "mesh_conditioned_transformer" or "mesh_sequence_conditioned_transformer".
+- `global_param_file`: Path to the global parameters file(s). The header should include `global_features`. (default: None)
+- `indices`: 
+- `norm_param_file`: Path to the json file that specifies the normalization settings. Each key (e.g., `HaloMass`) maps to a dictionary with `min` / `max` and `norm`. If `norm` is `"log"` or `"log_with_sign"`, the `min` / `max` normalization is applied after the log conversion.
+- `input_features`: List of the input properties (default: `["GroupMass"]`)
+- `output_features`: List of the output properties (default: `["SubhaloSFR", "SubhaloDist", "SubhaloVrad", "SubhaloVtan"]`)
+- `global_features`: List of global properties. If not None, `global_param_file` should be provided (default: None)
+- `max_length`: Maximum number of galaxies (sequence length) per halo (default: 30).
+- `use_flat_representation`: If true, use flattened point features (B, N * M). If false, keep (B, N, M). 
+
 
 ## Create mock data cube
 
@@ -101,10 +117,9 @@ Example of `model_config_file`:
 
 Example Jupyter notebooks are available in the `notebooks/` directory:
 
-- `plot_transformer.ipynb`: visualize training results
-- `plot_data_cube.ipynb`: visualize created data cube
-- `plot_lightcone.ipynb`: visualize lightcone data
-
+- `quick_check_halo.ipynb`, `quick_check_mesh.ipynb`: For quick look at training results 
+- `gen_analysis_halo.ipynb`, `gen_analysis_mesh.ipynb`: Visualize and analyse created data
+- `gen_analysis_lightcone_halo.ipynb`: Visualize and analyse created light cone data
 
 ## Citation
 

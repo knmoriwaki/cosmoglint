@@ -24,39 +24,33 @@ GitHub: https://github.com/knmoriwaki/cosmoglint
 Load model:
 ```python
 import json
-from cosmoglint.model.transformer import transformer_model
+from cosmoglint.model.transformer import Transformer1
 
-with open(f"args.json", "r") as f:
-  option = json.load(f, object_hook=lambda d: argparse.Namespace(**d))
-  
-model = transformer_model(option)
-```
-with a json file (example):
-```json
-{"model_name": "transformer1", "max_length": 50, "d_model": 128, "num_layers": 4, "num_heads": 8, "num_features_out": 100, "num_features_in": 4}
+cfg = {"max_length": 50, "d_model": 128, "num_layers": 4, "num_heads": 8, "num_features_cond": 1, "num_features_in": 4, "num_features_out": 100}
+model = Transformer1(**cfg)
 ```
 
 Predict probability:
 ```python
-prob = model(context, x) 
+prob = model(condition, seq) 
 ```
 
 Generate new galaxies:
 ```python
-generated, prob = model.generate(context, x, prob_threshold=1e-5)
+generated, prob = model.generate(condition, seq, prob_threshold=1e-5)
 ```
 
 Input:
-- `context`: a tensor of shape `(N, C_h)`, containing the properties of halo.
-- `x`: a tensor of shape `(N, L, C_g)`, containing the properties of up to `L` galaxies for each of the `N` halos in the batch. Each feature vector of size `C_g` may include, for example, the halo mass, relative distance to the halo center, radial velocity, and tangential velocity. Input `None` to generate from scratch.
+- `condition`: a tensor of shape `(B, C_h)`, containing the properties of halo.
+- `seq`: a tensor of shape `(B, L, C_g)`, containing the properties of up to `L` galaxies for each of the `N` halos in the batch. Each feature vector of size `C_g` may include, for example, the halo mass, relative distance to the halo center, radial velocity, and tangential velocity. Set to `None` to generate galaxies from scratch.
 - `prob_threshold` (optional): when sampling, the probability below this threshold is set to zero.
 
 Output:
-- `prob`: a tensor of shape `(N, L, C_g, d)`. `prob[i,j,k,:]` is the probability distribution over `d` bins for the k-th parameter of the **(j+1)-th galaxy** in the sequence for the i-th batch element. 
-- `generated`: a tensor of shape `(N, L, C_g)`. `generated[i,j,k]` is the sampled values for each parameter of **(j+1)-th galaxy** in the sequence for the i-th batch element.
+- `prob`: a tensor of shape `(B, L, C_g, d)`. `prob[i,j,k,:]` is the probability distribution over `d` bins for the k-th parameter of the **(j+1)-th galaxy** in the sequence for the i-th batch element. 
+- `generated`: a tensor of shape `(B, L, C_g)`. `generated[i,j,k]` is the sampled values for each parameter of **(j+1)-th galaxy** in the sequence for the i-th batch element.
 
 Shape: 
-- `N`: Batch size 
+- `B`: Batch size 
 - `L`: Sequence length 
 - `C_h`: Number of halo properties 
 - `C_g`: Number of galaxy properties predicted 
@@ -65,13 +59,21 @@ Shape:
 Options:
 | Key                    | Description                                                                                                                                                                |
 |------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **`model_name`**       | Name or identifier for the model configuration (default: `"transformer1"`). Available options are:<br> - `"transformer1"`: halo is prepended to the sequence<br> - `"transformer2"`: halo and galaxy features are embedded together | |
 | **`max_length`**       | Maximum number of galaxies (sequence length) the model will process per halo.|
 | **`d_model`**          | Dimensionality of the internal feature space (i.e., size of the token embeddings and hidden layers in the transformer).                             |
 | **`num_layers`**       | Number of transformer decoder layers stacked in the model.                                          |
 | **`num_heads`**        | Number of attention heads in the multi-head self-attention layers.                                       |
 | **`num_features_out`** | Total number of output bins for the probability distribution.  |
 | **`num_features_in`**  | Number of features per galaxy (e.g., SFR, relative distance, radial/tangential velocity).     |
+
+
+Models:
+| Class                    | Description                                                                                                                                                                |
+|------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **`Transformer1`**       | halo is prepended to the sequence |
+| **`Transformer2`** | halo and galaxy features are embedded together |
+| **`MeshConditionedTransformer`** | 3d mesh data is encoded in a sequence and decoded with the target sequence. `condition` should be a tensor of shape `(B, C_h, N, N, N)` |
+| **`MeshSequenceConditionedTransformer`** |  3d mesh and context sequence data is encoded in a sequence and decoded with the target sequence. `condition` should be a dict including "mesh" `(B, C_h, N, N, N)`, "context" `(B, L_ctx, C_g)`, "mask_ctx" `(B, L_ctx)`, "boundary" `(B, 6)`. |
 
 
 ## Citation
