@@ -44,7 +44,6 @@ def parse_args():
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--dropout", type=float, default=0.0)
     parser.add_argument("--sampler_weight_min", type=float, default=1, help="Minimum weight for the sampler, set to 1 to disable sampling")
-    parser.add_argument("--lambda_penalty_loss", type=float, default=0, help="Coefficient for the penalty loss")
     parser.add_argument("--save_freq", type=int, default=100)
     parser.add_argument("--exclude_ratio", type=float, default=0.0, help="Exclude halos in the corner of a size (exclude_ratio * BoxSize)^3")
 
@@ -185,30 +184,7 @@ def train_model(args):
         loss_nll = F.nll_loss(log_prob_flatten, target_bins_flatten, reduction='none') 
         loss = (loss_nll * weight_flatten).sum() / ( (weight_flatten).sum() + 1e-8 )
 
-        if args.lambda_penalty_loss > 0:
-            loss_penalty = args.lambda_penalty_loss * loss_func_penalty(output, seq, mask)
-            loss += loss_penalty
-        else:
-            loss_penalty = None
-
-        return loss, loss_penalty
-
-    def loss_func_penalty(output, target_bins, mask, weight=None):
-
-        batch_size, seq_length, num_features_in, num_features_out = output.shape
-        bin_width = 1.0 / num_features_out
-        if weight is None:
-            weight = torch.ones_like(target_bins, dtype=torch.float32, device=target_bins.device)
-
-        # Suppress the probabilites of bins above the previous target bin
-        # This is applied to the second satellite and onwards
-        prev_target_bins = target_bins[:, 1:-1, 0] # (batch, seq_length-2)
-        bin_idx = torch.arange(num_features_out, device=target_bins.device)
-        mask_penalty = (bin_idx[None, None, :] > prev_target_bins[:, :, None]).float() # (batch, seq_length-2, num_features_out)
-        loss_penalty = ( output[:, 2:, 0, :] * mask_penalty * bin_width ).sum(dim=-1) # (batch, seq_length-2)
-        loss_penalty = ( loss_penalty * weight[:, 2:, 0] ).sum() / ( (weight[:, 2:, 0]).sum() + 1e-8 )
-
-        return loss_penalty
+        return loss
 
     fname_log = "{}/log.txt".format(args.output_dir)
 
@@ -226,7 +202,7 @@ def train_model(args):
 
             for count, batch in enumerate(train_dataloader):
                 optimizer.zero_grad()
-                loss, loss_penalty = loss_func(batch) #, weight=weight)
+                loss = loss_func(batch) #, weight=weight)
 
                 loss.backward()
                 optimizer.step()
@@ -234,15 +210,13 @@ def train_model(args):
                 model.eval()
                 for batch_val in val_dataloader:
                     with torch.no_grad():
-                        loss_val, loss_penalty_val = loss_func(batch_val)
+                        loss_val = loss_func(batch_val)
                         break # show one batch result only
                 model.train()
 
                 epoch_now = epoch + count / num_batches
                 
                 log = "{:.8f} {:.4f} {:.4f} ".format(epoch_now, loss.item(), loss_val.item())
-                if loss_penalty_val is not None:
-                    log += "{:.4f} {:.4f} ".format(epoch_now, loss_penalty.item(), loss_penalty_val.item())
                 f.write("{}\n".format(log))
 
             scheduler.step()
