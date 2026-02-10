@@ -15,10 +15,8 @@ import torch
 #from astropy.cosmology import Planck15 as cosmo
 from astropy.cosmology import FlatLambdaCDM
 cosmo = FlatLambdaCDM(H0=67.74, Om0=0.3089)
-import astropy.units as u
 
 from cosmoglint.utils.io_utils import save_intensity_data, save_catalog_data
-from cosmoglint.utils.generation_utils import populate_galaxies_in_cube
 
 cspeed = 3e10 # [cm/s]
 micron = 1e-4 # [cm]
@@ -58,10 +56,13 @@ def parse_args():
     parser.add_argument("--model_dir", type=str, default=None, help="The directory of the model. If not given, use 7th column as intensity.")
     parser.add_argument("--prob_threshold", type=float, default=1e-5, help="Below this probability, the galaxy is not generated.")
     parser.add_argument("--max_sfr_file", type=str, default=None, help="File containing maximum IDs for SFR.")
+    parser.add_argument("--monotonicity_start_index", type=int, default=1)
 
     return parser.parse_args()
 
 def create_data(args):
+    import astropy.units as u
+
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed(args.seed)
     torch.backends.cudnn.deterministic = True
@@ -69,7 +70,8 @@ def create_data(args):
     np.random.seed(args.seed)
 
     npix = np.array([args.npix, args.npix, args.npix_z])
-    args.boxsize_to_use = args.boxsize if args.boxsize_to_use is None else args.boxsize_to_use
+    if args.boxsize_to_use is None:
+        args.boxsize_to_use = args.boxsize
     dx_pix = args.boxsize_to_use / npix
 
     ### Load data
@@ -112,7 +114,7 @@ def create_data(args):
 
     mass *= args.mass_correction_factor
 
-    # Load global parameters
+    ### Load global parameters
     if args.global_param_file is not None:
         global_params_all = np.genfromtxt(args.global_param_file, names=True, dtype=None, encoding="utf-8")
         global_params = global_params_all[args.global_param_id]
@@ -132,10 +134,12 @@ def create_data(args):
     mask = mask & (pos > 0).all(axis=-1)
     
     mass = mass[mask]
+    cond = mass[:, None]
     pos = pos[mask]
     vel = vel[mask]
 
     print(f"# Redshift: {redshift}")
+    import astropy.units as u
     H = cosmo.H(redshift).to(u.km/u.s/u.Mpc).value #[km/s/Mpc]
     hlittle = cosmo.H(0).to(u.km/u.s/u.Mpc).value / 100.0 
     scale_factor = 1 / (1 + redshift)
@@ -186,25 +190,70 @@ def create_data(args):
             save_intensity_data(intensities, args, args.output_fname)
 
     else:
-        
-        sfr, pos_galaxies_real, pos_galaxies = populate_galaxies_in_cube(args, mass, pos, vel, redshift, cosmo, global_params=global_params)
+        if "Transformer_NF" in args.model_dir:
+            from cosmoglint.sampling import sample_galaxies_TransNF
+            generated, mask = sample_galaxies_TransNF(args, cond, global_params=global_params)
+        else:
+            from cosmoglint.sampling import sample_galaxies
+            generated, mask = sample_galaxies(args, cond, global_params=global_params)
 
+        seq_length = mask.shape[1]
+        num_features = generated.shape[-1]
+        num_gal = mask.sum()
+
+        ### Define flag_central
+        flag_central = np.zeros_like(mask, dtype=bool) # (num_halos, seq_length)
+        flag_central[:, 0] = True
+
+        ### Flatten the arrays
+        mask = mask.reshape(-1) # (num_halos * seq_length, )
+        generated = generated.reshape(-1, num_features) # (num_halos * seq_length, num_features)
+        pos_central = np.repeat(pos[:,None,:], seq_length, axis=1).reshape(-1, 3) # (num_halos * seq_length, 3)
+        vel_central = np.repeat(vel[:,None,:], seq_length, axis=1).reshape(-1, 3) # (num_halos * seq_length, 3)
+        flag_central = flag_central.reshape(-1) # (num_halos * seq_length, )
+
+        ### Apply mask to arrays
+        generated = generated[mask] # (num_galaxies_valid, num_features)
+        pos_central = pos_central[mask] # (num_galaxies_valid, 3)
+        vel_central = vel_central[mask] # (num_galaxies_valid, 3)
+        flag_central = flag_central[mask] # (num_galaxies_valid, )
+
+        ### Distribute galaxies in cube
+        print("# Generate positions of galaxies")
+
+        sfr = generated[:,0]
+        distance = generated[:,1]
+
+        phi = np.random.uniform(0, 2 * np.pi, size=num_gal)
+        cos_theta = np.random.uniform(-1, 1, size=num_gal)
+        sin_theta = np.sqrt(1 - cos_theta ** 2)    
+
+        pos_galaxies = pos_central
+        pos_galaxies[:,0] += distance * sin_theta * np.cos(phi)
+        pos_galaxies[:,1] += distance * sin_theta * np.sin(phi)
+        pos_galaxies[:,2] += distance * cos_theta
+
+        pos_galaxies_real = copy.deepcopy(pos_galaxies) 
+
+        ### Add redshift-space distortion
+        if args.redshift_space:
+            H = cosmo.H(redshift).to(u.km/u.s/u.Mpc).value #[km/s/Mpc]
+            hlittle = cosmo.H(0).to(u.km/u.s/u.Mpc).value / 100.0 
+            scale_factor = 1 / (1 + redshift)
+
+            relative_vel_rad = generated[:,2]
+            relative_vel_tan = generated[:,3]
+            relative_vel_rad[flag_central] = 0 # Set vr to 0 for central galaxies
+            alpha = np.random.uniform(0, 2 * np.pi, size=num_gal)
+            vz_gal = - relative_vel_rad * cos_theta + relative_vel_tan * sin_theta * np.cos(alpha)
+            pos_galaxies[:,2] += ( vel_central[:,2] + vz_gal )/ scale_factor / H * hlittle
+        
         if args.gen_both:
             pos_list = [pos_galaxies_real, pos_galaxies]
         else:
             pos_list = [pos_galaxies]
 
-        def make_intensity_map(pos, flux):
-            ix_galaxies = (pos / dx_pix).astype(int) # (num_galaxies_valid, 3)    
-            valid_mask = np.all((ix_galaxies >= 0) & (ix_galaxies < npix), axis=1)
-            ix_valid = ix_galaxies[valid_mask]
-            flux_valid = flux[valid_mask]
-
-            intensity = np.zeros((args.npix, args.npix, args.npix_z))
-            np.add.at(intensity, (ix_valid[:, 0], ix_valid[:, 1], ix_valid[:, 2]), flux_valid)
-
-            return intensity
-
+        ### Save
         if args.gen_catalog:
             print("# Generate catalog of galaxies")
             pos_valid = []
@@ -216,7 +265,17 @@ def create_data(args):
 
         else:
             print("# Assign galaxies to pixels")
+            def make_intensity_map(pos, flux):
+                ix_galaxies = (pos / dx_pix).astype(int) # (num_galaxies_valid, 3)    
+                valid_mask = np.all((ix_galaxies >= 0) & (ix_galaxies < npix), axis=1)
+                ix_valid = ix_galaxies[valid_mask]
+                flux_valid = flux[valid_mask]
 
+                intensity = np.zeros((args.npix, args.npix, args.npix_z))
+                np.add.at(intensity, (ix_valid[:, 0], ix_valid[:, 1], ix_valid[:, 2]), flux_valid)
+
+                return intensity
+            
             intensities = []
             for pos in pos_list:
                 intensity = make_intensity_map(pos, sfr)

@@ -4,6 +4,7 @@ import argparse
 import json
 
 from tqdm import tqdm
+import yaml
 
 import numpy as np
 
@@ -13,8 +14,15 @@ from torch.utils.data import random_split
 from torch.distributions import Beta
 import torch.nn.functional as F
 
-from cosmoglint.utils import MyDataset, load_global_params
+from cosmoglint.datasets import HaloDataset, MeshDataset, MeshCtxDataset
+from cosmoglint.utils.io_utils import load_global_params
 from cosmoglint.model.transformer import transformer_model
+
+DATASET_REGISTRY = {
+    "halo": HaloDataset,
+    "mesh": MeshDataset,
+    "mesh_ctx": MeshCtxDataset
+}
 
 def parse_args():
 
@@ -26,16 +34,8 @@ def parse_args():
     parser.add_argument("--seed", type=int, default=12345)
     parser.add_argument("--show_pbar", action=argparse.BooleanOptionalAction, default=True)
 
-    # dataset parameters
-    parser.add_argument("--data_path", type=str, nargs='+', default=["data.h5"], help="Path to the data file(s). If the first file contains '*', indices will be used to specify the files, and other files will be ignored.")
-    parser.add_argument("--indices", type=str, default=None, help="e.g., 0-999. Only used when data_path contains *.")
-    parser.add_argument("--norm_param_file", type=str, default="./norm_params.json")
-    parser.add_argument("--global_param_file", type=str, nargs='+', default=None, help="Path to the global parameters file(s). If not None, the number of files must match that of data_path.")
-
-    parser.add_argument("--input_features", type=str, nargs='+', default=["GroupMass"])
-    parser.add_argument("--output_features", type=str, nargs='+', default=["SubhaloSFR", "SubhaloDist", "SubhaloVrad", "SubhaloVtan"])
-    parser.add_argument("--global_features", type=str, nargs='+', default=None)
-    parser.add_argument("--max_length", type=int, default=30)
+    # dataset and model parameters
+    parser.add_argument("--config_file", type=str, default="config.yaml")
 
     # training parameters
     parser.add_argument("--train_ratio", type=float, default=0.9)
@@ -48,13 +48,8 @@ def parse_args():
     parser.add_argument("--save_freq", type=int, default=100)
     parser.add_argument("--exclude_ratio", type=float, default=0.0, help="Exclude halos in the corner of a size (exclude_ratio * BoxSize)^3")
 
-    # model parameters
-    parser.add_argument("--model_name", type=str, default="transformer1")
-    parser.add_argument("--d_model", type=int, default=128)
-    parser.add_argument("--num_layers", type=int, default=4)
-    parser.add_argument("--num_heads", type=int, default=8)
-    parser.add_argument("--num_features_out", type=int, default=200)
-    parser.add_argument("--use_flat_representation", action=argparse.BooleanOptionalAction, default=True, help="If true, use flattened point features (B, N*M). If false, keep (B, N, M).")
+    parser.add_argument("--sampler_xmin", type=float, default=0)
+    parser.add_argument("--sampler_xmax", type=float, default=1)
 
     return parser.parse_args()
 
@@ -68,6 +63,12 @@ def train_model(args):
 
     device = torch.device("cuda:{}".format(args.gpu_id) if torch.cuda.is_available() else "cpu")
     print("# Using device: {}".format(device))
+
+    with open(args.config_file) as f:
+        cfg = yaml.safe_load(f) or {}
+
+    for k, v in cfg.items():
+        setattr(args, k, v)
 
     for k, v in vars(args).items():
         print(f"{k}: {v}")
@@ -84,7 +85,8 @@ def train_model(args):
     ### Load data
     with open(args.norm_param_file) as f:
         norm_param_dict = json.load(f)
-    
+    args.norm_param_dict = norm_param_dict
+
     global_params = load_global_params(args.global_param_file, args.global_features, norm_param_dict=norm_param_dict)
     
     data_path = args.data_path.copy()
@@ -102,12 +104,13 @@ def train_model(args):
         if global_params is not None:
             global_params = global_params[istart:iend+1, :]
 
-    dataset = MyDataset(data_path, args.input_features, args.output_features, global_params=global_params, norm_param_dict=norm_param_dict, max_length=args.max_length, exclude_ratio=args.exclude_ratio, use_flat_representation=args.use_flat_representation, show_pbar=args.show_pbar)
+    dataset_class = DATASET_REGISTRY[args.dataset]
+    dataset = dataset_class(args, global_params=global_params, exclude_ratio=args.exclude_ratio, show_pbar=args.show_pbar)
     train_size = int(args.train_ratio * len(dataset))
     val_size = len(dataset) - train_size
     train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
 
-    def get_sampler(x, nbins=20, xmin=0, xmax=1, temperature=1, weight_min=1e-8):
+    def get_sampler(x, nbins=20, xmin=args.sampler_xmin, xmax=args.sampler_xmax, temperature=1, weight_min=1e-8):
         bins = torch.linspace(xmin, xmax, steps=nbins+1)
         bin_indices = torch.bucketize(x, bins)
         counts = torch.bincount(bin_indices)
@@ -120,9 +123,14 @@ def train_model(args):
         return WeightedRandomSampler(weights.tolist(), len(weights), replacement=True)
     
     if args.sampler_weight_min < 1:
-        sampler = get_sampler(train_dataset.dataset.x[train_dataset.indices][:,0], weight_min=args.sampler_weight_min)
+        x = train_dataset.dataset.x[train_dataset.indices]
+        x = x.mean(dim=tuple(range(1, x.ndim)))
+        sampler = get_sampler(x, weight_min=args.sampler_weight_min)
         train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, sampler=sampler) 
-        sampler = get_sampler(val_dataset.dataset.x[val_dataset.indices][:,0], weight_min=args.sampler_weight_min)
+
+        x = val_dataset.dataset.x[val_dataset.indices]
+        x = x.mean(dim=tuple(range(1, x.ndim)))
+        sampler = get_sampler(x, weight_min=args.sampler_weight_min)
         val_dataloader = DataLoader(val_dataset, batch_size=args.batch_size, sampler=sampler)
     else:
         train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
@@ -132,7 +140,6 @@ def train_model(args):
     print("# Validation data: {:d}".format(len(val_dataset)))
 
     ### Save arguments
-    args.norm_param_dict = norm_param_dict
     fname = "{}/args.json".format(args.output_dir)
     with open(fname, "w") as f:
         json.dump(vars(args), f)
@@ -146,14 +153,19 @@ def train_model(args):
 
         seq = batch["target"].to(device)     # (batch, max_length, num_features_in)
         mask = batch["mask"].to(device)   # (batch, max_length)
-        context = batch["context"].to(device)  # (batch, num_condition)   
-        global_cond = batch["global_context"].to(device) # (batch, num_features_global)
+        condition = batch["condition"]
+
+        if isinstance(condition, dict):
+            condition = {k: v.to(device) for k, v in condition.items()}
+        else:
+            condition = condition.to(device)
+        global_cond = batch["global_cond"].to(device) # (batch, num_features_global)
         
         input_seq = seq[:, :-1]
         target = seq
 
-        output = model(context, input_seq, global_cond=global_cond) # (batch, max_length, num_features_in, num_features_out)
-        #_, output = model.generate(context, seq=seq, teacher_forcing_ratio=teacher_forcing_ratio) 
+        output = model(condition, input_seq, global_cond=global_cond) # (batch, max_length, num_features_in, num_features_out)
+        #_, output = model.generate(condition, seq=seq, teacher_forcing_ratio=teacher_forcing_ratio) 
         # output: (batch, max_length, num_features_in, num_features_out)
 
         batch_size, seq_length, num_features_in, num_features_out = output.shape

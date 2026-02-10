@@ -1,0 +1,28 @@
+# data
+data_path:
+  - ../dataset/TNG300-1/TNG300-1_33.h5
+global_param_file: null
+indices: null
+norm_param_file: ../dataset/param_files/norm_params_33.json
+dataset: "halo"
+ndata: null
+
+# features
+input_features:
+  - GroupMass
+output_features:
+  - SubhaloSFR
+  - SubhaloDist
+  - SubhaloVrad
+  - SubhaloVtan
+global_features: null
+max_length: 50
+
+# model
+model_name: transformer1
+d_model: 128
+num_layers: 4
+num_heads: 8
+num_features_out: 100
+use_flat_representation: true
+

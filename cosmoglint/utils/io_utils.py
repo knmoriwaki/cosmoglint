@@ -8,14 +8,11 @@ import h5py
 
 import torch
 
-from tqdm import tqdm
-
-from torch.utils.data import Dataset
-
 
 def my_save_model(model, fname):
     torch.save(model.state_dict(), fname)
     print(f"# Model saved to {fname}")
+
 
 def save_catalog_data(pos_list, value, args, output_fname):
     if not isinstance(pos_list, list):
@@ -44,6 +41,16 @@ def save_intensity_data(intensity, args, output_fname):
         for key, value in args_dict.items():
             f.attrs[key] = value
     print(f"# Data cube saved as {output_fname}")
+
+def safe_index(lst, key):
+    try: 
+        return lst.index(key)
+    except ValueError:
+        return None
+    
+def get_index_list(features, key_prefix, n=3):
+    idx_lst = [ safe_index(features, f"{key_prefix}:{i}") for i in range(n)]
+    return idx_lst
 
 def namespace_to_dict(ns):
     if isinstance(ns, Namespace):
@@ -81,6 +88,11 @@ def normalize(x, key, norm_param_dict, inverse=False, convert=True):
     """
 
     x = np.array(x)
+
+    if ":" in key:
+        key, idx = key.split(":", 1)
+    else:
+        key, idx = key, 0
         
     if norm_param_dict is not None:
         xmin = norm_param_dict[key]["min"]
@@ -103,6 +115,16 @@ def normalize(x, key, norm_param_dict, inverse=False, convert=True):
             x = ( x - xmin ) / ( xmax - xmin )
 
     return x
+
+def load_values(f, key, norm_param_dict=None):
+    if key not in f:
+        raise ValueError(f"Key '{key}' not found in the file.")
+
+    data = f[key][:]
+    if norm_param_dict is None:
+        return data
+    else:
+        return normalize(data, key, norm_param_dict)
 
 def load_global_params(global_param_file, global_features, norm_param_dict=None):
 
@@ -129,194 +151,114 @@ def load_global_params(global_param_file, global_features, norm_param_dict=None)
 
     return global_params # (ndata, num_features_global)
     
-def load_halo_data(
+
+def make_density_map(pos, npix, weight=1.0, mode="CIC", periodic=False):
+
+    map = np.zeros((npix,npix,npix), dtype=np.float64)
+
+    if mode == "NGP":
+        ix = pos.astype(int)
+        ix = np.clip(ix, 0, npix - 1)
+        map[ix[:,0], ix[:,1], ix[:,2]] += weight
+
+    elif mode == "CIC":
+        map_flat = map.reshape(-1)
+        i0 = np.floor(pos).astype(np.int64)
+        d = pos - i0
+        i1 = i0 + 1
+        if periodic:
+            i1 = i1 % npix
+        else:
+            i1 = np.clip(i1, 0, npix-1)
+
+        w0 = 1.0 - d
+        w1 = d
+
+        ix0, iy0, iz0 = i0[:,0], i0[:,1], i0[:,2]
+        ix1, iy1, iz1 = i1[:,0], i1[:,1], i1[:,2]
+        wx0, wy0, wz0 = w0[:,0], w0[:,1], w0[:,2]
+        wx1, wy1, wz1 = w1[:,0], w1[:,1], w1[:,2]
+        def add_triple(ix, iy, iz, w):
+            idx = (ix * npix + iy) * npix + iz
+            np.add.at(map_flat, idx, w)
+
+        add_triple(ix0, iy0, iz0, wx0*wy0*wz0*weight)
+        add_triple(ix1, iy0, iz0, wx1*wy0*wz0*weight)
+        add_triple(ix0, iy1, iz0, wx0*wy1*wz0*weight)
+        add_triple(ix1, iy1, iz0, wx1*wy1*wz0*weight)
+        add_triple(ix0, iy0, iz1, wx0*wy0*wz1*weight)
+        add_triple(ix1, iy0, iz1, wx1*wy0*wz1*weight)
+        add_triple(ix0, iy1, iz1, wx0*wy1*wz1*weight)
+        add_triple(ix1, iy1, iz1, wx1*wy1*wz1*weight)
+
+        map = map_flat.reshape((npix, npix, npix))
+
+    else:
+        raise ValueError("Unknown mode: {}".format(mode))
+    
+    return map
+
+def load_mesh_data(
         file_path, 
-        input_features,
-        output_features,
-        norm_param_dict=None, 
-        max_length=10, 
-        sort=True,
-        ndata=None,
-        exclude_ratio=0.0, 
-        use_excluded_region=False,
+        features,
+        norm_param_dict=None
     ):
+    """
+    Input:
+        file_path: Path to the HDF5 file containing the data.
+        norm_param_dict: Normalization parameters, if None, normalization is not applied.
+    """
         
-    def load_values(f, key):
-        if key not in f:
-            raise ValueError(f"Key '{key}' not found in the file.")
-
-        data = f[key][:]
-        return data
-
-    num_features_in = len(input_features)
-    num_features_out = len(output_features)
-
+    print("# Input file (mesh): {}".format(file_path))
     with h5py.File(file_path, "r") as f:
-
-        # Load input features
+        boxsize = f["Header"].attrs["BoxSize"] # [kpc/h]
         source_list = []
-        for feature in input_features:
-            x = load_values(f, feature)
+        for feature in features:
+            x = load_values(f, feature, norm_param_dict=norm_param_dict) # (npix, npix, npix, C)
+            if x.ndim == 3:
+                x = x[..., np.newaxis]
             source_list.append(x)
 
-        source = np.stack(source_list, axis=1)  # (N, num_features_in)
-        for i, key in enumerate(input_features):
-            source[:,i] = normalize(source[:,i], key, norm_param_dict)
+    source = np.concatenate(source_list, axis=-1) # (npix, npix, npix, num_features)
+    npix = source.shape[0]   
+    pixel_size = boxsize / npix # [kpc/h]
 
-        mask = np.ones(len(source), dtype=bool)
-        for i in range(num_features_in):
-            mask = mask & ( source[:,i] > 0 )
-            
-        if exclude_ratio > 0:
-            boxsize = f.attrs["BoxSize"] # [kpc/h]
-            halo_pos = f["GroupPos"][:]  # [kpc/h]
-            mask_exclude = (halo_pos[:,0] > boxsize * (1.-exclude_ratio)) \
-                        & (halo_pos[:,1] > boxsize * (1.-exclude_ratio)) \
-                        & (halo_pos[:,2] > boxsize * (1.-exclude_ratio))
+    return source, pixel_size
 
-            if use_excluded_region:
-                print("# Using excluded region of size ({} * BoxSize)^3".format(exclude_ratio))
-                mask = mask & mask_exclude
-            else:
-                print("# Exclude halos in the corner of size ({} * BoxSize)^3".format(exclude_ratio))
-                print("# The excluded region is {:.2f} % of the entire volume".format(100.0 * (exclude_ratio**3)))
-                mask = mask & (~mask_exclude)
-            
-        if mask.sum() == 0:
-            print("# No halo is found in {}".format(file_path))
-            return torch.empty((0, num_features_in), dtype=torch.float32), []
 
-        # Load output features
-        target_list = []
-        for feature in output_features:
-            y = load_values(f, feature)
-            target_list.append(y)
-
-        target = np.stack(target_list, axis=1)  # (N, num_features_out)
-        for i, key in enumerate(output_features):
-            target[:,i] = normalize(target[:,i], key, norm_param_dict)
-
-        num_subgroups = f["GroupNsubs"][:]
-
-        offset = 0
-        y_list = []
-        for j in range(len(source)):
-            start = offset
-            end = start + num_subgroups[j]
-            offset = end
-
-            if not mask[j]:                
-                continue
-
-            if num_subgroups[j] == 0:
-                y_j = np.zeros((1, num_features_out)) # handle empty subgroups
-            else:
-                y_j = target[start:end, :]
-
-            if sort:
-                sorted_indices = [0] + sorted(range(1, len(y_j)), key=lambda k: y_j[k,0], reverse=True)
-                y_j = y_j[sorted_indices]
-
-            y_j = y_j[:max_length] # truncate
-            y_j = torch.tensor(y_j, dtype=torch.float32)
-            y_list.append(y_j)
-            
-    x = source[mask]
-    x = torch.tensor(x, dtype=torch.float32)
+from collections import defaultdict
     
-    if ndata is not None:
-        x = x[:ndata]
-        y_list = y_list[:ndata]
+def load_galaxy_data(file_path, features, norm_param_dict):
+    key_to_indices = defaultdict(list)
 
-    return x, y_list
-
-class MyDataset(Dataset):
-    def __init__(
-            self, 
-            path,  
-            input_features,
-            output_features, 
-            global_params=None,
-            norm_param_dict=None, 
-            max_length=10, 
-            sort=True,
-            ndata=None, 
-            exclude_ratio=0.0,
-            use_excluded_region=False,
-            use_flat_representation=False,
-            show_pbar=True,
-        ):
-            
-        if not isinstance(path, list):
-            path = [path]
-
-        if global_params is not None:
-            if len(global_params) != len(path):
-                raise ValueError("The number of global parameter sets must match the number of data files")
-
-        x = []
-        self.y = []
-        self.g = []
-
-        plist = path
-        if len(path) < 20:
-            verbose = True 
+    for feat in features:
+        if ":" in feat:
+            key, idx = feat.split(":", 1)
         else:
-            verbose = False
-            if show_pbar:
-                plist = tqdm(plist, file=sys.stderr)
-            print("# Loading halo data from {} to {} ({} files)".format(path[0], path[-1], len(path)))
-
-        for i, p in enumerate(plist):
-            if verbose:
-                print(f"# Loading halo data from {p}")
-    
-            x_tmp, y_tmp = load_halo_data(p, input_features, output_features, norm_param_dict=norm_param_dict, max_length=max_length, sort=sort, ndata=ndata, exclude_ratio=exclude_ratio, use_excluded_region=use_excluded_region)
-            x.append(x_tmp) 
-            self.y = self.y + y_tmp
-
-            if global_params is not None:
-                global_param = global_params[i]
-                g_tmp = np.repeat(global_param[None, :], len(x_tmp), axis=0) # (Nhalo, num_features_global)
-            else:
-                g_tmp = np.zeros((len(x_tmp), 1)) # dummy (Nhalo, 1)
-            
-            self.g.append( g_tmp )
-
-        self.x = torch.cat(x, dim=0)
-
-        if len(self.x) == 0:
-            raise ValueError("No halo is found.")
-
-        self.g = np.vstack(self.g) 
-        self.g = torch.tensor(self.g, dtype=torch.float32)
+            key, idx = feat, 0
         
-        _, num_params = (self.y[0]).shape
+        key_to_indices[key].append(int(idx))
 
-        self.y_padded = torch.zeros(len(self.x), max_length, num_params)
-        self.mask = torch.zeros(len(self.x), max_length, num_params, dtype=torch.bool)
-        
-        for i, y_i in enumerate(self.y):
-            length = len(y_i)
-            self.y_padded[i, :length, :] = y_i[:max_length]
-            self.mask[i, :length+1, :] = True # use the last + 1 value to learn when to stop
-        
-        if use_flat_representation:
-            self.y_padded = self.y_padded.reshape(len(self.y_padded), -1, 1) # (Nhalo, max_length * output_features, 1)
-            self.mask = self.mask.reshape(len(self.mask), -1, 1) # (Nhalo, max_length * output_features, 1)
+    print("# Input file (galaxy): {}".format(file_path))
 
-    def __len__(self):
-        return len(self.x)
+    with h5py.File(file_path, "r") as f:
+        gal_data_list = []
+        for key, idxs in key_to_indices.items():
+            x = load_values(f, key, norm_param_dict=norm_param_dict)
+            if x.ndim == 1:
+                x = x[:, None]
+            x = x[:, idxs]
+            gal_data_list.append(x)
 
-    def __getitem__(self, idx):
-        batch = {
-            "context": self.x[idx],
-            "global_context": self.g[idx],
-            "target": self.y_padded[idx],
-            "mask": self.mask[idx]
-        }
-        return batch
-    
+    gal_data = np.concatenate(gal_data_list, axis=1) # (N, num_features)
+
+    # mask
+    mask = (gal_data > 0).all(axis=1)
+    gal_data = gal_data[mask]
+
+    return gal_data
+
+ 
 def load_lightcone_data(input_fname, cosmo):
     print(f"# Load {input_fname}")
 
@@ -325,7 +267,7 @@ def load_lightcone_data(input_fname, cosmo):
             M, theta, phi, _, redshift_obs, redshift_real = load_old_plc(input_fname)
             mass = M
         else:
-            import cosmoglint.utils.ReadPinocchio5 as rp
+            import ReadPinocchio5 as rp
             myplc = rp.plc(input_fname)
             
             mass = myplc.data["Mass"] 
@@ -376,7 +318,7 @@ def load_old_plc(filename):
 
             plc_bytes = f.read(dummy)
             if len(plc_bytes) != dummy:
-                break  # 不完全な読み込み
+                break  
 
             data = struct.unpack(plc_struct_format, plc_bytes)
             (

@@ -11,7 +11,8 @@ import torch
 from torch.utils.data import DataLoader, WeightedRandomSampler
 from torch.utils.data import random_split
 
-from cosmoglint.utils import MyDataset, load_global_params
+from cosmoglint.datasets import HaloDataset
+from cosmoglint.utils.io_utils import load_global_params
 from cosmoglint.model.transformer_nf import transformer_nf_model, my_stop_predictor, calculate_transformer_nf_loss
 
 def parse_args():
@@ -108,7 +109,7 @@ def train_model(args):
         if global_params is not None:
             global_params = global_params[istart:iend+1, :]
 
-    dataset =  MyDataset(data_path, args.input_features, args.output_features, global_params=global_params, norm_param_dict=norm_param_dict, max_length=args.max_length, exclude_ratio=args.exclude_ratio, use_flat_representation=False, show_pbar=args.show_pbar)
+    dataset =  HaloDataset(data_path, args.input_features, args.output_features, global_params=global_params, norm_param_dict=norm_param_dict, max_length=args.max_length, exclude_ratio=args.exclude_ratio, use_flat_representation=False, show_pbar=args.show_pbar)
     train_size = int(args.train_ratio * len(dataset))
     val_size = len(dataset) - train_size
     train_dataset, val_dataset = random_split(dataset, [train_size, val_size])

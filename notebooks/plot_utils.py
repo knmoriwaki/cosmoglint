@@ -339,3 +339,156 @@ def calc_ecp(x_true, y_true, alpha, sample_func, y_ref=None, Ngen=1000, show_pba
 
     ecp /= Nsim
     return ecp
+
+def plot_scatter(y, ax=None, x_idx=0, y_idx=1, z_idx=2, color_idx=-1, mask_idx="all", mask_threshold=0, lo=None, hi=None, s=5, xmin=0, xmax=1, ymin=0, ymax=1, zmin=0, zmax=1, vmin=0, vmax=1, marker="o", show_colorbar=False):
+
+    if ax is None:
+        ax = plt.gca()
+
+    if mask_idx == "all":
+        mask = (y > mask_threshold).all(axis=-1)
+    else:
+        mask = y[...,mask_idx] > mask_threshold
+
+    mask = mask & (y[..., z_idx] >= zmin) & (y[..., z_idx] < zmax)
+
+    pos_idx = [x_idx, y_idx, z_idx]
+    if lo is not None:
+        mask = mask & (y[:,pos_idx] >= lo).all(axis=-1)
+    if hi is not None:
+        mask = mask & (y[:,pos_idx] < hi).all(axis=-1)
+
+    ytmp = y[mask]
+    
+    ax.set_title("N = {:d}".format(len(ytmp)))
+    im = ax.scatter(ytmp[:,x_idx], ytmp[:,y_idx], c=ytmp[:,color_idx], s=s, vmin=vmin, vmax=vmax, marker=marker)
+    if show_colorbar:
+        plt.colorbar(im, ax)
+
+    ax.set_xlim(xmin, xmax)
+    ax.set_ylim(ymin, ymax)
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_aspect("equal")
+
+
+from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+def draw_cube(ax, lo, hi, edge_alpha=0.5, **kwargs):
+    vertices = [
+        [lo[0], lo[1], lo[2]],
+        [hi[0], lo[1], lo[2]],
+        [hi[0], hi[1], lo[2]],
+        [lo[0], hi[1], lo[2]],
+        [lo[0], lo[1], hi[2]],
+        [hi[0], lo[1], hi[2]],
+        [hi[0], hi[1], hi[2]],
+        [lo[0], hi[1], hi[2]],
+    ]
+    vertices = [[x, z, y] for (x, y, z) in vertices] # (x,z,y) to have z in the LoS direction
+    faces = [
+        [vertices[j] for j in [0,1,2,3]],
+        [vertices[j] for j in [4,5,6,7]],
+        [vertices[j] for j in [0,1,5,4]],
+        [vertices[j] for j in [2,3,7,6]],
+        [vertices[j] for j in [1,2,6,5]],
+        [vertices[j] for j in [4,7,3,0]]
+    ]
+    ax.add_collection3d(Poly3DCollection(faces, edgecolors=(1, 0, 0, edge_alpha), alpha=0, **kwargs))
+    
+    return faces
+
+def plot_3d_scatter(y, ax=None, x_idx=0, y_idx=1, z_idx=2, mask_idx=-1, mask_threshold=0, color_idx=-1, xmin=0, xmax=1, ymin=0, ymax=1, zmin=0, zmax=1, vmin=0, vmax=1, marker="o", s=10, **kwargs):
+    if ax is None:
+        ax = plt.gca()
+
+    mask = y[..., mask_idx] > mask_threshold
+    ytmp = y[mask]
+    
+    ax.scatter(ytmp[:,x_idx], ytmp[:,y_idx], ytmp[:,z_idx], c=ytmp[:,color_idx], vmin=vmin, vmax=vmax, s=s, marker=marker, **kwargs)
+    plt.title("N = {:d}".format(len(ytmp)))
+    ax.set_xlim(xmin, xmax)
+    ax.set_ylim(ymin, ymax)
+    ax.set_zlim(zmin, zmax)
+    
+from matplotlib.lines import Line2D
+from scipy.stats import gaussian_kde
+
+def plot_contour(y1, y2, colors=None, xlim=None, ylim=None, label=None, nbins=50, logscale=False, mode="contour", **kwargs):
+    if logscale:
+        y1 = np.log10(y1)
+        y2 = np.log10(y2)
+        if xlim is not None:
+            xlim = [ np.log10( x ) for x in xlim ]
+        if ylim is not None:
+            ylim = [ np.log10( y ) for y in ylim ]
+
+    values = np.vstack([y1, y2])
+    kde = gaussian_kde(values)
+
+    if xlim is None:
+        xgrid = np.linspace(y1.min(), y1.max(), nbins)
+    else:
+        xgrid = np.linspace(xlim[0], xlim[1], nbins)
+    if ylim is None:
+        ygrid = np.linspace(y2.min(), y2.max(), nbins)
+    else:
+        ygrid = np.linspace(ylim[0], ylim[1], nbins)
+    X, Y = np.meshgrid(xgrid, ygrid)
+    positions = np.vstack([X.ravel(), Y.ravel()])
+    Z = kde(positions).reshape(X.shape)
+
+    Z_flat = Z.flatten()
+    Z_sorted = np.sort(Z_flat)[::-1]  
+    cumsum = np.cumsum(Z_sorted)
+    cumsum /= cumsum[-1]  
+
+    levels = []
+    for target in [0.9545, 0.6827, 0.383]: #[0.9973, 0.9545, 0.6827, 0.383]:
+        idx = np.searchsorted(cumsum, target)
+        levels.append(Z_sorted[idx])
+
+    if logscale:
+        X = 10 ** X
+        Y = 10 ** Y
+
+    if mode == "contourf":
+        contour = plt.contourf(X, Y, Z, levels=levels + [Z.max()], colors=colors, **kwargs)
+        from matplotlib.patches import Patch
+        legend_color = contour.cmap(contour.norm(contour.levels[-1]))
+        legend_handle = Patch(color=legend_color, edgecolor='none', label=label, **kwargs)
+
+    else:
+        kwargs2 = dict(kwargs)  # copy
+        if 'ls' in kwargs2:
+            kwargs2['linestyles'] = kwargs2.pop('ls')
+        contour = plt.contour(X, Y, Z, levels=levels, colors=colors, **kwargs2)
+        legend_color = contour.cmap(contour.norm(contour.levels[-1]))
+        legend_handle = Line2D([0], [0], color=legend_color, label=label, lw=1, **kwargs)
+        
+    return legend_handle
+
+
+
+class OnlineStats:
+    def __init__(self):
+        self.n = 0
+        self.mean = 0.0
+        self.M2 = 0.0  
+
+    def update(self, x):
+        self.n += 1
+        delta = x - self.mean
+        self.mean += delta / self.n
+        delta2 = x - self.mean
+        self.M2 += delta * delta2
+
+    @property
+    def variance(self):
+        if self.n < 2:
+            return np.nan
+        return self.M2 / (self.n - 1)
+
+    @property
+    def std(self):
+        return np.sqrt(self.variance)
+

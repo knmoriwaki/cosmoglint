@@ -1,0 +1,265 @@
+import sys
+import os
+from argparse import Namespace
+import random
+import numpy as np
+
+import h5py
+
+import torch
+
+from tqdm import tqdm
+
+from torch.utils.data import Dataset
+
+from cosmoglint.utils.io_utils import load_values
+    
+def load_halo_data(
+        file_path, 
+        input_features,
+        output_features,
+        norm_param_dict=None, 
+        max_length=10, 
+        sort=True,
+        ndata=None,
+        exclude_ratio=0.0, 
+        use_excluded_region=False,
+    ):
+        
+    num_features_in = len(input_features)
+    num_features_out = len(output_features)
+
+    with h5py.File(file_path, "r") as f:
+
+        # Load input features
+        source_list = []
+        for feature in input_features:
+            x = load_values(f, feature, norm_param_dict=norm_param_dict)
+            source_list.append(x)
+
+        source = np.stack(source_list, axis=1)  # (N, num_features_in)
+
+        mask = np.ones(len(source), dtype=bool)
+        for i in range(num_features_in):
+            mask = mask & ( source[:,i] > 0 )
+            
+        if exclude_ratio > 0:
+            boxsize = f.attrs["BoxSize"] # [kpc/h]
+            halo_pos = f["GroupPos"][:]  # [kpc/h]
+            mask_exclude = (halo_pos[:,0] > boxsize * (1.-exclude_ratio)) \
+                        & (halo_pos[:,1] > boxsize * (1.-exclude_ratio)) \
+                        & (halo_pos[:,2] > boxsize * (1.-exclude_ratio))
+
+            if use_excluded_region:
+                print("# Using excluded region of size ({} * BoxSize)^3".format(exclude_ratio))
+                mask = mask & mask_exclude
+            else:
+                print("# Exclude halos in the corner of size ({} * BoxSize)^3".format(exclude_ratio))
+                print("# The excluded region is {:.2f} % of the entire volume".format(100.0 * (exclude_ratio**3)))
+                mask = mask & (~mask_exclude)
+            
+        if mask.sum() == 0:
+            print("# No halo is found in {}".format(file_path))
+            return torch.empty((0, num_features_in), dtype=torch.float32), []
+
+        # Load output features
+        target_list = []
+        for feature in output_features:
+            y = load_values(f, feature, norm_param_dict=norm_param_dict)
+            target_list.append(y)
+
+        target = np.stack(target_list, axis=1)  # (N, num_features_out)
+
+        num_subgroups = f["GroupNsubs"][:]
+
+        offset = 0
+        y_list = []
+        for j in range(len(source)):
+            start = offset
+            end = start + num_subgroups[j]
+            offset = end
+
+            if not mask[j]:                
+                continue
+
+            if num_subgroups[j] == 0:
+                y_j = np.zeros((1, num_features_out)) # handle empty subgroups
+            else:
+                y_j = target[start:end, :]
+
+            if sort:
+                sorted_indices = [0] + sorted(range(1, len(y_j)), key=lambda k: y_j[k,0], reverse=True)
+                y_j = y_j[sorted_indices]
+
+            y_j = y_j[:max_length] # truncate
+            y_j = torch.tensor(y_j, dtype=torch.float32)
+            y_list.append(y_j)
+            
+    x = source[mask]
+    x = torch.tensor(x, dtype=torch.float32)
+    
+    if ndata is not None:
+        x = x[:ndata]
+        y_list = y_list[:ndata]
+
+    return x, y_list
+
+class HaloDataset(Dataset):
+    def __init__(
+            self,
+            args,  
+            global_params=None,
+            sort=True,
+            exclude_ratio=0.0,
+            use_excluded_region=False,
+            show_pbar=True,
+        ):
+            
+        if not isinstance(args.data_path, list):
+            args.data_path = [args.data_path]
+
+        if global_params is not None:
+            if len(global_params) != len(args.data_path):
+                raise ValueError("The number of global parameter sets must match the number of data files")
+
+        x = []
+        self.y = []
+        self.g = []
+
+        plist = args.data_path
+        if len(plist) < 20:
+            verbose = True 
+        else:
+            verbose = False
+            if show_pbar:
+                plist = tqdm(plist, file=sys.stderr)
+            print("# Loading halo data from {} to {} ({} files)".format(args.data_path[0], args.data_path[-1], len(args.data_path)))
+
+        for i, p in enumerate(plist):
+            if verbose:
+                print(f"# Loading halo data from {p}")
+    
+            x_tmp, y_tmp = load_halo_data(p, args.input_features, args.output_features, norm_param_dict=args.norm_param_dict, max_length=args.max_length, sort=sort, ndata=args.ndata, exclude_ratio=exclude_ratio, use_excluded_region=use_excluded_region)
+            x.append(x_tmp) 
+            self.y = self.y + y_tmp
+
+            if global_params is not None:
+                global_param = global_params[i]
+                g_tmp = np.repeat(global_param[None, :], len(x_tmp), axis=0) # (Nhalo, num_features_global)
+            else:
+                g_tmp = np.zeros((len(x_tmp), 1)) # dummy (Nhalo, 1)
+            
+            self.g.append( g_tmp )
+
+        self.x = torch.cat(x, dim=0)
+
+        if len(self.x) == 0:
+            raise ValueError("No halo is found.")
+
+        self.g = np.vstack(self.g) 
+        self.g = torch.tensor(self.g, dtype=torch.float32)
+        
+        _, num_params = (self.y[0]).shape
+
+        self.y_padded = torch.zeros(len(self.x), args.max_length, num_params)
+        self.mask = torch.zeros(len(self.x), args.max_length, num_params, dtype=torch.bool)
+        
+        for i, y_i in enumerate(self.y):
+            length = len(y_i)
+            self.y_padded[i, :length, :] = y_i[:args.max_length]
+            self.mask[i, :length+1, :] = True # use the last + 1 value to learn when to stop
+        
+        if args.use_flat_representation:
+            self.y_padded = self.y_padded.reshape(len(self.y_padded), -1, 1) # (Nhalo, max_length * output_features, 1)
+            self.mask = self.mask.reshape(len(self.mask), -1, 1) # (Nhalo, max_length * output_features, 1)
+
+    def __len__(self):
+        return len(self.x)
+
+    def __getitem__(self, idx):
+        out = {
+            "condition": self.x[idx],
+            "global_cond": self.g[idx],
+            "target": self.y_padded[idx],
+            "mask": self.mask[idx]
+        }
+        return out
+    
+def load_lightcone_data(input_fname, cosmo):
+    print(f"# Load {input_fname}")
+
+    if "pinocchio" in input_fname: 
+        if "old_version" in input_fname:
+            M, theta, phi, _, redshift_obs, redshift_real = load_old_plc(input_fname)
+            mass = M
+        else:
+            import cosmoglint.utils.ReadPinocchio5 as rp
+            myplc = rp.plc(input_fname)
+            
+            mass = myplc.data["Mass"] 
+            theta = myplc.data["theta"] # [arcsec]
+            phi = myplc.data["phi"]
+
+            redshift_obs = myplc.data["obsz"]
+            redshift_real = myplc.data["truez"]
+
+        import astropy.units as u
+        hlittle = cosmo.H(0).to(u.km/u.s/u.Mpc).value / 100.0 
+        mass /= hlittle # [Msun]
+
+        theta = ( 90. - theta ) * 3600 # [arcsec]
+        pos_x = theta * np.cos( phi * np.pi / 180. ) # [arcsec] 
+        pos_y = theta * np.sin( phi * np.pi / 180. ) # [arcsec]
+        
+        print("# Minimum log mass in catalog: {:.5f}".format(np.min(np.log10(mass))))
+        print("# Maximum pos: ({:.3f}, {:.3f}) arcsec".format(np.max(pos_x), np.max(pos_y)))
+        print("# Minimum pos: ({:.3f}, {:.3f}) arcsec".format(np.min(pos_x), np.min(pos_y)))
+        print("# Redshift: {:.3f} - {:.3f}".format(np.min(redshift_real), np.max(redshift_real)))
+        print("# Number of halos: {}".format(len(mass)))
+
+    else:
+        raise ValueError("Unknown input file format")
+    
+    return mass, pos_x, pos_y, redshift_obs, redshift_real
+
+
+def load_old_plc(filename):
+    import struct
+
+    plc_struct_format = "<Q d ddd ddd ddddd"  # Q=uint64, d=double, little-endian
+    plc_size = struct.calcsize(plc_struct_format)
+
+    M_list = []
+    th_list = []
+    ph_list = []
+    vl_list = []
+    zo_list = []
+    z_list = []
+    with open(filename, "rb") as f:
+        while True:
+            dummy_bytes = f.read(4)
+            if not dummy_bytes:
+                break  # EOF
+            dummy = struct.unpack("<i", dummy_bytes)[0]
+
+            plc_bytes = f.read(dummy)
+            if len(plc_bytes) != dummy:
+                break  # 不完全な読み込み
+
+            data = struct.unpack(plc_struct_format, plc_bytes)
+            (
+                id, z, x1, x2, x3, v1, v2, v3,
+                M, th, ph, vl, zo
+            ) = data
+
+            dummy2_bytes = f.read(4)
+            dummy2 = struct.unpack("<i", dummy2_bytes)[0]
+
+            M_list.append(M)
+            th_list.append(th)
+            ph_list.append(ph)
+            vl_list.append(vl)
+            zo_list.append(zo)
+            z_list.append(z)
+    
+    return np.array(M_list), np.array(th_list), np.array(ph_list), np.array(vl_list), np.array(zo_list), np.array(z_list)

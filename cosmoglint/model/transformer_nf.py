@@ -113,10 +113,10 @@ def transformer_nf_model(args, **kwargs):
 def calculate_transformer_nf_loss(transformer, flow, batch, stop=None, stop_predictor=None):
     device = next(transformer.parameters()).device
 
-    condition = batch["context"].to(device)
+    condition = batch["condition"].to(device)
     seq = batch["target"].to(device)
     mask = batch["mask"].to(device) # (batch, max_length, num_context)
-    global_cond = batch["global_context"].to(device)
+    global_cond = batch["global_cond"].to(device)
 
     input_seq = seq[:, :-1] # (batch, max_length-1, num_features)
     output = transformer(condition, input_seq, global_cond=global_cond) # (batch, max_length, num_context)
@@ -146,12 +146,19 @@ def generate_with_transformer_nf(transformer, flow, x_cond, stop_predictor=None,
     if stop_predictor is not None:
         stop_predictor.eval()
 
-    batch_size = len(x_cond)
+    if isinstance(x_cond, dict):
+        x_cond_ref = next(iter(x_cond.values())) # One of the conditions 
+    else:
+        x_cond_ref = x_cond
+
+    batch_size = len(x_cond_ref)
+    device = x_cond_ref.device
+
     max_length = transformer.max_length
     num_features = transformer.num_features_in
 
-    x_seq = torch.zeros(batch_size, max_length, num_features).to(x_cond.device)
-    stop_flags = torch.zeros(batch_size, dtype=torch.bool).to(x_cond.device)
+    x_seq = torch.zeros(batch_size, max_length, num_features).to(device)
+    stop_flags = torch.zeros(batch_size, dtype=torch.bool).to(device)
 
     for t in range(max_length):
         with torch.no_grad():
@@ -192,9 +199,9 @@ def generate_with_transformer_nf(transformer, flow, x_cond, stop_predictor=None,
 
             if t == 0:
                 if num_features > 1:
-                    x_seq[:,0,1] = torch.randn(batch_size).to(x_cond.device) * 1e-3 # Random distance for central
+                    x_seq[:,0,1] = torch.randn(batch_size).to(device) * 1e-3 # Random distance for central
                 if num_features > 2:
-                    x_seq[:,0,2] = torch.randn(batch_size).to(x_cond.device) * 1e-3
+                    x_seq[:,0,2] = torch.randn(batch_size).to(device) * 1e-3
             
             if stop_flags.all():
                 break
