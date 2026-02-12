@@ -1,13 +1,13 @@
 #!/bin/bash
 
-dm_fname=../../map2points/dataset/TNG300-3-Dark/TNG300-3-Dark_dm_33_keep0.10_npix256.h5
+dm_fname=../data/mesh/TNG300-3-Dark/TNG300-3-Dark_dm_33_keep0.10_npix256.h5
 npix_orig=256
 npix=128
 
 fname_id=TNG
 fname_id=catalog.33.threshold1
 
-base_dir=../dataset/generated_data_mesh
+base_dir=../data/mesh/generated_data
 output_dir=${base_dir}/statistics
 
 seed=0

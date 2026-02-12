@@ -31,16 +31,18 @@ def parse_args():
 
     # training parameters
     parser.add_argument("--train_ratio", type=float, default=0.9)
+    parser.add_argument("--exclude_ratio", type=float, default=0.0, help="Exclude halos in the corner of a size (exclude_ratio * BoxSize)^3")
+
     parser.add_argument("--batch_size", type=int, default=128)
     parser.add_argument("--num_epochs", type=int, default=2)
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--dropout", type=float, default=0.0)
-    parser.add_argument("--sampler_weight_min", type=float, default=1, help="Minimum weight for the sampler, set to 1 to disable sampling")
-    parser.add_argument("--save_freq", type=int, default=100)
-    parser.add_argument("--exclude_ratio", type=float, default=0.0, help="Exclude halos in the corner of a size (exclude_ratio * BoxSize)^3")
 
     parser.add_argument("--sampler_xmin", type=float, default=0)
     parser.add_argument("--sampler_xmax", type=float, default=1)
+    parser.add_argument("--sampler_weight_min", type=float, default=1, help="Minimum weight for the sampler, set to 1 to disable sampling")
+
+    parser.add_argument("--save_freq", type=int, default=100)
 
     return parser.parse_args()
 
@@ -105,30 +107,17 @@ def train_model(args):
     train_size = int(args.train_ratio * len(dataset))
     val_size = len(dataset) - train_size
     train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
-
-    def get_sampler(x, nbins=20, xmin=args.sampler_xmin, xmax=args.sampler_xmax, temperature=1, weight_min=1e-8):
-        x = x.detach().to("cpu")
-        bins = torch.linspace(xmin, xmax, steps=nbins+1)
-        bin_indices = torch.bucketize(x, bins, right=False) - 1
-        bin_indices = bin_indices.clamp(0, nbins-1)
-        counts = torch.bincount(bin_indices, minlength=nbins).to(torch.double)
-        weights = 1. / counts[bin_indices] 
-        weights = weights.pow(temperature) # Apply temperature scaling
-        weights = weights.clamp(min=weight_min) # Avoid zero weights
-        # When setting replacement to True and num_samples to the original number of samples, the sampler can select the same sample multiple times even within a single epoch.
-        # The minimum weight is set to balance the sampling (few samples appear less frequently than when minimum is not set) 
-        # Large minimum weight (larger than ~1e-5: the maximum number of halo mass function at z = 2) means the rare samples will be sampled more frequently (could suffer from overfitting, but might be faster to converge)
-        return WeightedRandomSampler(weights, len(weights), replacement=True)
     
     if args.sampler_weight_min < 1:
+        from cosmoglint.utils import get_sampler
         x = train_dataset.dataset.x[train_dataset.indices]
         x = x.mean(dim=tuple(range(1, x.ndim)))
-        sampler = get_sampler(x, weight_min=args.sampler_weight_min)
+        sampler = get_sampler(x, xmin=args.sampler_xmin, xmax=args.sampler_xmax, weight_min=args.sampler_weight_min)
         train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, sampler=sampler) 
 
         x = val_dataset.dataset.x[val_dataset.indices]
         x = x.mean(dim=tuple(range(1, x.ndim)))
-        sampler = get_sampler(x, weight_min=args.sampler_weight_min)
+        sampler = get_sampler(x, xmin=args.sampler_xmin, xmax=args.sampler_xmax, weight_min=args.sampler_weight_min)
         val_dataloader = DataLoader(val_dataset, batch_size=args.batch_size, sampler=sampler)
     else:
         train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)

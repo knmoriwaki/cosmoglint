@@ -5,15 +5,15 @@ gpu_id=1
 threshold=1e-3
 #threshold=1
 
-base_dir=../dataset
-output_dir=../dataset/generated_data
+base_dir=./data/halo
+output_dir=./data/halo/generated_data
 mkdir -p $output_dir
 
 snapshot_number=33
 
 model_name=transformer1
 model_dir=./runs/output_transformer/${model_name}_${snapshot_number}_ep40_bs512_w0.02
-max_sfr_file=../dataset/param_files/max_nbin20_${snapshot_number}.txt
+max_sfr_file=./data/halo/param_files/max_nbin20_${snapshot_number}.txt
 
 seed=0
 while [ $seed -lt 1 ]

@@ -4,15 +4,15 @@ gpu_id=1
 
 threshold=1
 
-output_dir=../dataset/generated_data_mesh
+output_dir=../data/mesh/generated_data
 mkdir -p $output_dir
 
 snapshot_number=33
-model_dir=./runs/output_transformer_mesh/transformer_${snapshot_number}_ep2000_bs256_w1
+model_dir=./runs/output_transformer_mesh/transformer_${snapshot_number}_ep500_bs256_w1
 npix_orig=256
 npix_to_use=128
 
-input_fname=../../map2points/dataset/TNG300-3-Dark/TNG300-3-Dark_dm_33_keep0.10_npix256.h5
+input_fname=../data/mesh/TNG300-3-Dark/TNG300-3-Dark_dm_33_keep0.10_npix256.h5
     
 output_prefix=data_cube.${snapshot_number}.threshold${threshold}
 output_catalog_prefix=catalog.${snapshot_number}.threshold${threshold}

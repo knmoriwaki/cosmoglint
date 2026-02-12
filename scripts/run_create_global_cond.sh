@@ -4,8 +4,8 @@ gpu_id=1
 
 threshold=1e-3
 
-base_dir=../dataset
-output_dir=../dataset/generated_data
+base_dir=./data/halo
+output_dir=./data/halo/generated_data
 mkdir -p $output_dir
 
 snapshot_number=44

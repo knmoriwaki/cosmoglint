@@ -66,3 +66,18 @@ def make_density_map(pos, npix, weight=1.0, mode="CIC", periodic=False):
         raise ValueError("Unknown mode: {}".format(mode))
     
     return map
+
+
+def get_sampler(x, xmin, xmax, nbins=20, temperature=1, weight_min=1e-8):
+        x = x.detach().to("cpu")
+        bins = torch.linspace(xmin, xmax, steps=nbins+1)
+        bin_indices = torch.bucketize(x, bins, right=False) - 1
+        bin_indices = bin_indices.clamp(0, nbins-1)
+        counts = torch.bincount(bin_indices, minlength=nbins).to(torch.double)
+        weights = 1. / counts[bin_indices] 
+        weights = weights.pow(temperature) # Apply temperature scaling
+        weights = weights.clamp(min=weight_min) # Avoid zero weights
+        # When setting replacement to True and num_samples to the original number of samples, the sampler can select the same sample multiple times even within a single epoch.
+        # The minimum weight is set to balance the sampling (few samples appear less frequently than when minimum is not set) 
+        # Large minimum weight (larger than ~1e-5: the maximum number of halo mass function at z = 2) means the rare samples will be sampled more frequently (could suffer from overfitting, but might be faster to converge)
+        return WeightedRandomSampler(weights, len(weights), replacement=True)
