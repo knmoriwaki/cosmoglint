@@ -12,7 +12,8 @@ from tqdm import tqdm
 
 from torch.utils.data import Dataset
 
-from cosmoglint.utils.io_utils import get_index_list, load_mesh_data, load_galaxy_data
+from cosmoglint.utils.io_utils import load_mesh_data, load_galaxy_data
+from cosmoglint.utils import get_index_list
     
 def get_random_patches(
     dm_density, 

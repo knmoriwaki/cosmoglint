@@ -17,7 +17,8 @@ from astropy.cosmology import FlatLambdaCDM
 cosmo = FlatLambdaCDM(H0=67.74, Om0=0.3089)
 import astropy.units as u
 
-from cosmoglint.utils.io_utils import normalize, namespace_to_dict,load_mesh_data, get_index_list, save_hdf5_intensity_data, save_hdf5_catalog_data
+from cosmoglint.utils import normalize, namespace_to_dict,get_index_list
+from cosmoglint.utils.io_utils import load_mesh_data, save_hdf5_intensity_data, save_hdf5_catalog_data
 from cosmoglint.sampling import sample_galaxies_from_mesh_continuous
 
 cspeed = 3e10 # [cm/s]

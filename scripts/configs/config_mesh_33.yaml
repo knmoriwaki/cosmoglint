@@ -1,11 +1,11 @@
 # data
 data_path:
-  - ../../map2points/dataset/TNG300-1/TNG300-1_33.h5
+  - ../data/mesh/TNG300-1/TNG300-1_33.h5
 data_path_mesh:
-  - ../../map2points/dataset/TNG300-3-Dark/TNG300-3-Dark_dm_33_keep0.10_npix256.h5
+  - ../data/mesh/TNG300-3-Dark/TNG300-3-Dark_dm_33_keep0.10_npix256.h5
 global_param_file: null
 indices: null
-norm_param_file: ../../map2points/dataset/param_files/norm_params_33_npix256.json
+norm_param_file: ../data/mesh/param_files/norm_params_33_npix256.json
 dataset: "mesh_ctx"
 npix_patch: 16
 npix_exclude: 128
@@ -21,7 +21,7 @@ output_features:
   - SubhaloPos:1
   - SubhaloPos:2
 global_features: null
-max_length: 50
+max_length: 100
 
 # model
 #model_name: mesh_conditioned_transformer

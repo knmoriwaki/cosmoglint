@@ -12,7 +12,7 @@ import numpy as np
 
 import torch
 
-from cosmoglint.utils.io_utils import normalize, namespace_to_dict
+from cosmoglint.utils import normalize, namespace_to_dict
 
 def create_mask(array, threshold): 
     """

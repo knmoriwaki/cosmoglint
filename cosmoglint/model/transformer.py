@@ -6,7 +6,6 @@ import torch.nn as nn
 from torch.distributions import Categorical
 #from .xattn_transformer import MeshConditionedXAttnTransformer, MeshSequenceConditionedXAttnTransformer
 
-import torch.nn.functional as F
 
 def transformer_model(cfg, **kwargs):
     
@@ -115,44 +114,6 @@ class TransformerBase(nn.Module):
         zero_tensor = torch.tensor(0.0).to(x.device)
         return torch.where(mask, zero_tensor, x)
     
-    def calc_loss(self, batch, weight=None):
-        
-        device = next(self.parameters()).device
-        seq = batch["target"].to(device)     # (batch, max_length, num_features_in)
-        mask = batch["mask"].to(device)   # (batch, max_length)
-        condition = batch["condition"]
-
-        if isinstance(condition, dict):
-            condition = {k: v.to(device) for k, v in condition.items()}
-        else:
-            condition = condition.to(device)
-        global_cond = batch["global_cond"].to(device) # (batch, num_features_global)
-        
-        input_seq = seq[:, :-1]
-        target = seq
-
-        output = self(condition, input_seq, global_cond=global_cond) # (batch, max_length, num_features_in, num_features_out)
-        #_, output = model.generate(condition, seq=seq, teacher_forcing_ratio=teacher_forcing_ratio) 
-        # output: (batch, max_length, num_features_in, num_features_out)
-
-        if weight is None:
-            weight = torch.ones_like(target, dtype=torch.float32, device=target.device) # (batch, seq_length)
-
-        weight = mask * weight
-
-        log_prob = torch.log( output + 1e-8 )
-        target_bins = (target * self.num_features_out).long() # (batch, seq_length, num_features_in) [0, 1] -> [0, num_features_out-1]
-        target_bins = torch.clamp(target_bins, min=0, max=self.num_features_out - 1)
-
-        log_prob_flatten = log_prob.contiguous().view(-1, self.num_features_out) # (batch * seq_length * num_features_in, num_features_out)
-        target_bins_flatten = target_bins.contiguous().view(-1) # (batch * seq_length * num_features_in, )
-        weight_flatten = weight.contiguous().view(-1) # (batch * seq_length * num_features_in, )
-
-        loss_nll = F.nll_loss(log_prob_flatten, target_bins_flatten, reduction='none') 
-        loss = (loss_nll * weight_flatten).sum() / ( (weight_flatten).sum() + 1e-8 )
-
-        return loss
-        
     def generate(
             self, 
             condition, 

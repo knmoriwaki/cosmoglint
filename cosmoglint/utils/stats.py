@@ -41,8 +41,7 @@ def my_fft(X, L=None, b=1.): # b = 2 * np.pi for inverse FT
 
     return ft, freq
 
-
-def angular_average_nd(field, coords, nbins, n=None, log_bins=False, indx_min=0):
+def angular_average_nd(field, coords, nbins, n=None, log_bins=False, indx_min=0, verbose=True):
     ## can be used for real field only
 
     dim = len(field.shape)
@@ -73,10 +72,11 @@ def angular_average_nd(field, coords, nbins, n=None, log_bins=False, indx_min=0)
     # the last component of bincount is for values > mx, where there should be no such pixels. So bincount[-1] is always 0.
     # we remove these two compontnes by setting [1:-1].
     sumweights = np.bincount(indx, minlength=len(bins)+1)[1:-1] 
-    if np.any(sumweights==0):
-        print("Warning: one or more radial bins had no cell within it. Use a smaller nbins.")
-    if np.any(sumweights==1):
-        print("Warning: one or more radial bins have only one cell within it. This would result in inf in the variance")
+    if verbose:
+        if np.any(sumweights==0):
+            print("Warning: one or more radial bins had no cell within it. Use a smaller nbins.")
+        if np.any(sumweights==1):
+            print("Warning: one or more radial bins have only one cell within it. This would result in inf in the variance")
 
     ### compute the mean in each bin ###
     # for each bin, sum up the field values, and then divide by the number of pixels
@@ -90,7 +90,7 @@ def angular_average_nd(field, coords, nbins, n=None, log_bins=False, indx_min=0)
 
     return mean[indx_min:], bins[indx_min:], var[indx_min:]
 
-def compute_power(deltax, deltax2=None, boxlength=1., nbins=20, log_bins=False):
+def compute_power(deltax, deltax2=None, boxlength=1., nbins=20, log_bins=False, verbose=True):
     ## compmute power spectrum 
     # Inputs:
     #   deltax: input image 
@@ -132,11 +132,11 @@ def compute_power(deltax, deltax2=None, boxlength=1., nbins=20, log_bins=False):
     """ 
 
     # compute angular power spectrum
-    Pk, k, var = angular_average_nd(P, freq, nbins, log_bins=log_bins)
+    Pk, k, var = angular_average_nd(P, freq, nbins, log_bins=log_bins, verbose=verbose)
 
     return Pk, k, var
 
-def cylindrical_average(field, coords, nbins, log_bins=False, use_same_bins=False):
+def cylindrical_average(field, coords, nbins, log_bins=False, use_same_bins=False, verbose=True):
 
     if field.ndim != 3 or len(coords) != 3:
         raise ValueError("field must be 3D and coords must be a list of 3 1D arrays.")
@@ -179,10 +179,11 @@ def cylindrical_average(field, coords, nbins, log_bins=False, use_same_bins=Fals
 
     sumweights = np.bincount(combined_idx, minlength=nbins * nbins)
     sumweights = sumweights.reshape((nbins, nbins))
-    if np.any(sumweights == 0):
-        print("Warning: one or more radial bins had no cell within it. Use a smaller nbins.")
-    if np.any(sumweights == 1):
-        print("Warning: one or more radial bins have only one cell within it. This would result in inf in the variance")
+    if verbose:
+        if np.any(sumweights == 0):
+            print("Warning: one or more radial bins had no cell within it. Use a smaller nbins.")
+        if np.any(sumweights == 1):
+            print("Warning: one or more radial bins have only one cell within it. This would result in inf in the variance")
 
     field_flat = field.flatten()
     sum_field = np.bincount(combined_idx, weights=field_flat[valid], minlength=nbins * nbins)
@@ -276,19 +277,20 @@ def compute_r(image1, image2, boxlength=1., nbins=20, log_bins=True):
     P2, _, var2 = compute_power(image2, boxlength=boxlength, nbins=nbins, log_bins=log_bins)
     return Px / np.sqrt( P1 * P2 ), k
 
+def calc_lightcone_noise_power(sigma_noise_Jy_sr, freq_obs, freq_rest, intensity, side_length=3600, line_name="CO(1-0)", with_hlittle=True, cosmo=None):
 
-from astropy.cosmology import FlatLambdaCDM
-cosmo_default = FlatLambdaCDM(H0=67.74, Om0=0.3089)
+    from .cosmology_utils import arcsec_to_cMpc, freq_to_comdis
 
-def calc_lightcone_noise_power(sigma_noise_Jy_sr, freq, intensity, side_length=3600, line_name="CO(1-0)", with_hlittle=True, cosmo=cosmo_default):
+    if cosmo is None:
+        from astropy.cosmology import FlatLambdaCDM
+        cosmo_default = FlatLambdaCDM(H0=67.74, Om0=0.3089)
        
-    redshifts = line_dict[line_name][0] / GHz / freq - 1
+    redshifts = freq_rest / freq_obs - 1
     redshift_mean = np.mean(redshifts)
-    nu_rest = line_dict[line_name][0] / GHz
 
     Lx = arcsec_to_cMpc(side_length, redshift_mean, cosmo=cosmo, l_with_hlittle=with_hlittle) # [cMpc/h]
     Ly = arcsec_to_cMpc(side_length, redshift_mean, cosmo=cosmo, l_with_hlittle=with_hlittle) # [cMpc/h]
-    Lz = freq_to_comdis(freq[0], nu_rest, cosmo=cosmo, l_with_hlittle=with_hlittle) - freq_to_comdis(freq[-1], nu_rest, cosmo=cosmo, l_with_hlittle=with_hlittle) 
+    Lz = freq_to_comdis(freq_obs[0], freq_rest, cosmo=cosmo, l_with_hlittle=with_hlittle) - freq_to_comdis(freq_obs[-1], freq_rest, cosmo=cosmo, l_with_hlittle=with_hlittle) 
 
     dx = Lx / intensity.shape[0]
     dy = Ly / intensity.shape[1]
@@ -302,7 +304,7 @@ def calc_lightcone_noise_power(sigma_noise_Jy_sr, freq, intensity, side_length=3
     return P_noise
 
 
-def calc_lightcone_power(freq_obs, intensity, intensity2=None, side_length=3600, line_name="CO(1-0)", dlogk=0.2, with_hlittle=True, logkpara_min=-10, logkperp_min=-10, sigma_noise=0, sigma_noise2=0, cosmo=cosmo_default): 
+def calc_lightcone_power(freq_obs, freq_rest, intensity, intensity2=None, side_length=3600, line_name="CO(1-0)", dlogk=0.2, with_hlittle=True, logkpara_min=-10, logkperp_min=-10, sigma_noise=0, sigma_noise2=0, cosmo=None): 
     """
     input:
         freq: (N,) frequency [GHz]
@@ -317,17 +319,21 @@ def calc_lightcone_power(freq_obs, intensity, intensity2=None, side_length=3600,
         k: (Nk,) wavenumber [h/cMpc^-1]
         power1d: (Nk,) power spectrum [input unit^2 * (cMpc/h)^3]
     """
+    from .cosmology_utils import arcsec_to_cMpc, freq_to_comdis
     
-    redshifts = line_dict[line_name][0] / GHz / freq_obs - 1
-    redshift_mean = np.mean(redshifts)
-    nu_rest = line_dict[line_name][0] / GHz
+    if cosmo is None:
+        from astropy.cosmology import FlatLambdaCDM
+        cosmo_default = FlatLambdaCDM(H0=67.74, Om0=0.3089)
 
+    redshifts = freq_rest / freq_obs - 1
+    redshift_mean = np.mean(redshifts)
+    
     print("Use {} rest-frame frequency".format(line_name))
     print("redshift: {:.2f} - {:.2f} (mean: {:.2f})".format(redshifts[-1],redshifts[0],redshift_mean))
     
     Lx = arcsec_to_cMpc(side_length, redshift_mean, cosmo=cosmo, l_with_hlittle=with_hlittle) # [cMpc]
     Ly = arcsec_to_cMpc(side_length, redshift_mean, cosmo=cosmo, l_with_hlittle=with_hlittle) # [cMpc]
-    Lz = freq_to_comdis(freq_obs[0], nu_rest) - freq_to_comdis(freq_obs[-1], nu_rest) # [cMpc]
+    Lz = freq_to_comdis(freq_obs[0], freq_rest) - freq_to_comdis(freq_obs[-1], freq_rest) # [cMpc]
 
     ## Fourier transform
     L = np.array([Lx, Ly, Lz])
@@ -366,3 +372,112 @@ def calc_lightcone_power(freq_obs, intensity, intensity2=None, side_length=3600,
             power1d_err[i] = (power1d[i] + power_noise) / np.sqrt(Nk)
 
     return 10**(0.5*(logk_bins[1:]+logk_bins[:-1])), power1d, power1d_err
+
+
+import treecorr
+def calc_corr(pos, boxsize, min_sep=0.3, max_sep=200, nbins=20, n_random=None, fout=None):
+    x, y, z = pos[:,0], pos[:,1], pos[:,2]
+    if n_random is None:
+        n_random = len(x)
+    x_rand = np.random.uniform(0, boxsize, n_random)
+    y_rand = np.random.uniform(0, boxsize, n_random)
+    z_rand = np.random.uniform(0, boxsize, n_random)
+
+    # ---- Create Catalog ----
+    cat = treecorr.Catalog(x=x, y=y, z=z)
+    cat_random = treecorr.Catalog(x=x_rand, y=y_rand, z=z_rand)
+
+    # ---- Setup ----
+    nn = treecorr.NNCorrelation(min_sep=min_sep, max_sep=max_sep, nbins=nbins) 
+    dr = treecorr.NNCorrelation(min_sep=min_sep, max_sep=max_sep, nbins=nbins) 
+    rr = treecorr.NNCorrelation(min_sep=min_sep, max_sep=max_sep, nbins=nbins) 
+
+    # ---- Calculate correlation function ----
+    nn.process(cat)
+    dr.process(cat, cat_random)
+    rr.process(cat_random, cat_random)
+
+    if fout is not None:
+        nn.write(fout, rr=rr, dr=dr)
+        print("output: {}".format(fout))
+
+    xi, varxi = nn.calculateXi(rr=rr, dr=dr)
+    r = np.exp(nn.meanlogr)   
+
+    return r, xi, varxi
+
+
+def precompute_shell_offsets(r_min, r_max, nbins, voxel_size=1.0):
+
+    shell_offsets = [[] for _ in range(nbins)]
+
+    max_index_offset = int(np.ceil(r_max / voxel_size))
+
+    #edges = np.linspace(r_min, r_max, nbins+1)
+    edges = np.logspace(np.log10(r_min), np.log10(r_max), nbins+1)
+
+    for dx in range(-max_index_offset, max_index_offset + 1):
+        for dy in range(-max_index_offset, max_index_offset + 1):
+            for dz in range(-max_index_offset, max_index_offset + 1):
+                r = np.sqrt(dx*dx + dy*dy + dz*dz) * voxel_size
+                
+                if r < r_min or r >= r_max:
+                    continue
+                bin_idx = np.searchsorted(edges, r, side="right") - 1
+                
+                if bin_idx < 0 or bin_idx >= nbins:
+                    continue
+
+                shell_offsets[bin_idx].append((dx, dy, dz))
+
+    shell_offsets = [np.array(o, dtype=np.int32) if len(o) > 0 else np.zeros((0, 3), dtype=np.int32)
+                    for o in shell_offsets]
+    
+    #radii = (np.arange(nbins) + 0.5) * dr  
+    radii = np.sqrt(edges[:-1] * edges[1:])
+    return shell_offsets, radii
+
+
+def radial_profile_around_points(mesh, points, r_min, r_max, nbins, voxel_size=1.0, origin=(0.0, 0.0, 0.0)):
+    """
+    mesh: (N, N, N)
+    points: (L, 3) 
+    r_max, dr: 
+    voxel_size: 
+    origin: position of mesh[0,0,0] 
+    """
+    N = mesh.shape[0]
+    assert mesh.shape[1] == N and mesh.shape[2] == N, "mesh shape should be (N,N,N)"
+
+    shell_offsets, radii = precompute_shell_offsets(r_min, r_max, nbins, voxel_size)
+
+    nbins = len(shell_offsets)
+    L = points.shape[0]
+
+    profiles = np.full((L, nbins), np.nan, dtype=np.float64)
+
+    idx_f = (points - np.array(origin)) / voxel_size
+    idx = np.rint(idx_f).astype(int)  # (L, 3)
+
+    for i in range(L):
+        ix, iy, iz = idx[i]
+        if not (0 <= ix < N and 0 <= iy < N and 0 <= iz < N):
+            continue
+
+        for b in range(nbins):
+            offsets = shell_offsets[b]
+            if offsets.shape[0] == 0:
+                continue
+            
+            ox = ix + offsets[:, 0]
+            oy = iy + offsets[:, 1]
+            oz = iz + offsets[:, 2]
+
+            mask = (ox >= 0) & (ox < N) & (oy >= 0) & (oy < N) & (oz >= 0) & (oz < N)
+            if not np.any(mask):
+                continue
+
+            vals = mesh[ox[mask], oy[mask], oz[mask]]
+            profiles[i, b] = vals.mean()
+
+    return profiles, radii

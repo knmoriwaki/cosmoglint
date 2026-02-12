@@ -9,4 +9,4 @@ build/
 *.whl
 *.tar.gz
 scripts/calc_statistics/
-dataset/
+data/

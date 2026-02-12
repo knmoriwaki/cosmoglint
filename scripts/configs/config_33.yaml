@@ -1,9 +1,9 @@
 # data
 data_path:
-  - ../dataset/TNG300-1/TNG300-1_33.h5
+  - ../data/halo/TNG300-1/TNG300-1_33.h5
 global_param_file: null
 indices: null
-norm_param_file: ../dataset/param_files/norm_params_33.json
+norm_param_file: ../data/halo/param_files/norm_params_33.json
 dataset: "halo"
 ndata: null
 

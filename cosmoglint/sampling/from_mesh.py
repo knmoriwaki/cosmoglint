@@ -12,7 +12,7 @@ import numpy as np
 
 import torch
 
-from cosmoglint.utils.io_utils import normalize, get_index_list
+from cosmoglint.utils import normalize, get_index_list
 from cosmoglint.datasets.dataset_mesh import get_new_region, round_offsets
 
 def sample_galaxies_from_mesh(

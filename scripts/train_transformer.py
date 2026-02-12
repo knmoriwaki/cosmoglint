@@ -95,7 +95,6 @@ def train_model(args):
         if global_params is not None:
             global_params = global_params[istart:iend+1, :]
 
-    dataset_class = DATASET_REGISTRY[args.dataset]
     if args.model_name == "mesh_conditioned_transformer": 
         dataset_class = MeshDataset
     elif args.model_name == "mesh_sequence_conditioned_transformer":
@@ -145,6 +144,44 @@ def train_model(args):
     print("# Arguments saved to {}".format(fname))
 
     ### Training
+    def calc_loss(batch, weight=None, device=device):
+
+        import torch.nn.functional as F
+
+        seq = batch["target"].to(device)     # (batch, max_length, num_features_in)
+        mask = batch["mask"].to(device)   # (batch, max_length)
+        condition = batch["condition"]
+        if isinstance(condition, dict):
+            condition = {k: v.to(device) for k, v in condition.items()}
+        else:
+            condition = condition.to(device)
+        global_cond = batch["global_cond"].to(device) # (batch, num_features_global)
+        
+        input_seq = seq[:, :-1]
+        target = seq
+
+        output = model(condition, input_seq, global_cond=global_cond) # (batch, max_length, num_features_in, num_features_out)
+        #_, output = model.generate(condition, seq=seq, teacher_forcing_ratio=teacher_forcing_ratio) 
+        # output: (batch, max_length, num_features_in, num_features_out)
+
+        if weight is None:
+            weight = torch.ones_like(target, dtype=torch.float32, device=target.device) # (batch, seq_length)
+
+        weight = mask * weight
+
+        log_prob = torch.log( output + 1e-8 )
+        target_bins = (target * args.num_features_out).long() # (batch, seq_length, num_features_in) [0, 1] -> [0, num_features_out-1]
+        target_bins = torch.clamp(target_bins, min=0, max=args.num_features_out - 1)
+
+        log_prob_flatten = log_prob.contiguous().view(-1, args.num_features_out) # (batch * seq_length * num_features_in, num_features_out)
+        target_bins_flatten = target_bins.contiguous().view(-1) # (batch * seq_length * num_features_in, )
+        weight_flatten = weight.contiguous().view(-1) # (batch * seq_length * num_features_in, )
+
+        loss_nll = F.nll_loss(log_prob_flatten, target_bins_flatten, reduction='none') 
+        loss = (loss_nll * weight_flatten).sum() / ( (weight_flatten).sum() + 1e-8 )
+
+        return loss
+
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-5)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.num_epochs, eta_min=1e-6)
 
@@ -164,7 +201,7 @@ def train_model(args):
 
             for count, batch in enumerate(train_dataloader):
                 optimizer.zero_grad()
-                loss = model.calc_loss(batch) #, weight=weight)
+                loss = calc_loss(batch) #, weight=weight)
 
                 loss.backward()
                 optimizer.step()
@@ -172,7 +209,7 @@ def train_model(args):
                 model.eval()
                 for batch_val in val_dataloader:
                     with torch.no_grad():
-                        loss_val = model.calc_loss(batch_val)
+                        loss_val = calc_loss(batch_val)
                         break # show one batch result only
                 model.train()
 

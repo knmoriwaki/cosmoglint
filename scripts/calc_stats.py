@@ -3,14 +3,13 @@ import os
 import numpy as np
 
 import h5py
-from map2points.utils.power import compute_power
-from map2points.utils.generate import make_density_map
-
+from cosmoglint.utils.stats import compute_power
+from cosmoglint.utils import make_density_map
 
 import argparse
 parser = argparse.ArgumentParser()
-parser.add_argument("--base_dir", type=str, default="../dataset/generated_data")
-parser.add_argument("--output_dir", type=str, default="../dataset/generated_data/statistics")
+parser.add_argument("--base_dir", type=str, default="../data/generated_data")
+parser.add_argument("--output_dir", type=str, default="../data/generated_data/statistics")
 parser.add_argument("--fname_id", type=str, default="catalog_ddpm_quadratic_crossformer_33_npix16_ep6000_hd128_nl4_nlcond3_nlpyr0_w0.01_lr1e-4_pad_with_flag")
 parser.add_argument("--dm_fname", type=str, default="TNG300-1-Dark.h5")
 parser.add_argument("--stats_name", type=str, default="power")
@@ -119,81 +118,7 @@ def calc_lim_cross_power(cat, density_map, boxsize, fout):
 
 
 def calc_r_profile(cat, boxsize, fout):
-
-    def precompute_shell_offsets(r_min, r_max, nbins, voxel_size=1.0):
-
-        shell_offsets = [[] for _ in range(nbins)]
-
-        max_index_offset = int(np.ceil(r_max / voxel_size))
-
-        #edges = np.linspace(r_min, r_max, nbins+1)
-        edges = np.logspace(np.log10(r_min), np.log10(r_max), nbins+1)
-
-        for dx in range(-max_index_offset, max_index_offset + 1):
-            for dy in range(-max_index_offset, max_index_offset + 1):
-                for dz in range(-max_index_offset, max_index_offset + 1):
-                    r = np.sqrt(dx*dx + dy*dy + dz*dz) * voxel_size
-                    
-                    if r < r_min or r >= r_max:
-                        continue
-                    bin_idx = np.searchsorted(edges, r, side="right") - 1
-                    
-                    if bin_idx < 0 or bin_idx >= nbins:
-                        continue
-
-                    shell_offsets[bin_idx].append((dx, dy, dz))
-
-        shell_offsets = [np.array(o, dtype=np.int32) if len(o) > 0 else np.zeros((0, 3), dtype=np.int32)
-                        for o in shell_offsets]
-        
-        #radii = (np.arange(nbins) + 0.5) * dr  
-        radii = np.sqrt(edges[:-1] * edges[1:])
-        return shell_offsets, radii
-
-
-    def radial_profile_around_points(mesh, points, r_min, r_max, nbins, voxel_size=1.0, origin=(0.0, 0.0, 0.0)):
-        """
-        mesh: 形状 (N, N, N)
-        points: 形状 (L, 3) （物理座標）
-        r_max, dr: 半径方向の最大値とビン幅（同じ単位）
-        voxel_size: 1ボクセルの物理サイズ
-        origin: mesh[0,0,0] の物理座標
-        """
-        N = mesh.shape[0]
-        assert mesh.shape[1] == N and mesh.shape[2] == N, "mesh は (N,N,N) を仮定"
-
-        shell_offsets, radii = precompute_shell_offsets(r_min, r_max, nbins, voxel_size)
-
-        nbins = len(shell_offsets)
-        L = points.shape[0]
-
-        profiles = np.full((L, nbins), np.nan, dtype=np.float64)
-
-        idx_f = (points - np.array(origin)) / voxel_size
-        idx = np.rint(idx_f).astype(int)  # (L, 3)
-
-        for i in range(L):
-            ix, iy, iz = idx[i]
-            if not (0 <= ix < N and 0 <= iy < N and 0 <= iz < N):
-                continue
-
-            for b in range(nbins):
-                offsets = shell_offsets[b]
-                if offsets.shape[0] == 0:
-                    continue
-                
-                ox = ix + offsets[:, 0]
-                oy = iy + offsets[:, 1]
-                oz = iz + offsets[:, 2]
-
-                mask = (ox >= 0) & (ox < N) & (oy >= 0) & (oy < N) & (oz >= 0) & (oz < N)
-                if not np.any(mask):
-                    continue
-
-                vals = mesh[ox[mask], oy[mask], oz[mask]]
-                profiles[i, b] = vals.mean()
-
-        return profiles, radii
+    from cosmoglint.utils.stats import radial_profile_around_points
 
     r_min = 3.0
     r_max = 50.0  
@@ -239,7 +164,7 @@ npix_to_show = args.npix
 density_map = density_map[-npix_to_show:,-npix_to_show:,-npix_to_show:]
 
 if args.fname_id == "TNG":
-    file_name_list_cat = ["../../map2points/dataset/TNG300-1/TNG300-1_33.h5"]
+    file_name_list_cat = ["../data/mesh/TNG300-1/TNG300-1_33.h5"]
 else:
     file_name_list_cat = [ "{}/{}.seed{:d}.h5".format(args.base_dir, args.fname_id, seed) for seed in range(args.seed_start, args.seed_end) ]
 
