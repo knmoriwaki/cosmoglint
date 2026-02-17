@@ -54,6 +54,8 @@ def parse_args():
 
     ### Generative model parameters
     parser.add_argument("--model_dir", type=str, default=None, help="The directory of the model. If not given, use 7th column as intensity.")
+    parser.add_argument("--model_label", type=str, default="", help="Model label (e.g., _ep100)")
+
     parser.add_argument("--prob_threshold", type=float, default=1e-5, help="Below this probability, the galaxy is not generated.")
     parser.add_argument("--max_sfr_file", type=str, default=None, help="File containing maximum IDs for SFR.")
     parser.add_argument("--monotonicity_start_index", type=int, default=1)
@@ -205,7 +207,7 @@ def create_data(args):
             save_hdf5_intensity_data(intensities, args, args.output_fname)
 
     else:
-        if "Transformer_NF" in args.model_dir:
+        if "transformer_nf" in args.model_dir:
             from cosmoglint.sampling import sample_galaxies_TransNF
             generated, mask = sample_galaxies_TransNF(args, cond, global_params=global_params)
         else:

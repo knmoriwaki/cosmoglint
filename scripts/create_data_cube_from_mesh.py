@@ -53,6 +53,7 @@ def parse_args():
     ### Generative model parameters
     parser.add_argument("--batch_size", type=int, default=None)
     parser.add_argument("--model_dir", type=str, default=None, help="The directory of the model. If not given, use 7th column as intensity.")
+    parser.add_argument("--model_label", type=str, default="", help="Model label (e.g., _ep100)")
     parser.add_argument("--prob_threshold", type=float, default=1e-5, help="Below this probability, the galaxy is not generated.")
     parser.add_argument("--monotonicity_start_index", type=int, default=None)
     parser.add_argument("--num_rounds", type=int, default=8, help="Number of rounds of patch generation")
@@ -87,7 +88,7 @@ def create_data(args):
         opt.norm_param_dict = namespace_to_dict(opt.norm_param_dict)
 
     model = transformer_model(opt)
-    model.load_state_dict(torch.load("{}/model.pth".format(args.model_dir), map_location="cpu"))
+    model.load_state_dict(torch.load("{}/model{}.pth".format(args.model_dir, args.model_label), map_location="cpu"))
     model.to(device)
     model.eval()
     print(model)

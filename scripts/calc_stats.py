@@ -20,7 +20,6 @@ parser.add_argument("--seed_start", type=int, default=0)
 parser.add_argument("--seed_end", type=int, default=1)
 
 parser.add_argument("--npix", type=int, default=128, help="npix for power spectrum calculation")
-parser.add_argument("--npix_orig", type=int, default=256)
 
 args = parser.parse_args()
 
@@ -148,46 +147,52 @@ def calc_r_profile(cat, boxsize, fout):
     print("Saved radial profile data to ", fout)
 
 ### Load data
-snapshot_number = 33
-sim_name = "TNG300-3-Dark"
-
 with h5py.File(args.dm_fname, "r") as f:
     density_map = f["density_map"][:] 
-npix_to_show = 64
-if "npix16" in args.fname_id:
-    npix_to_show = 128
-if "npix32" in args.fname_id:
-    npix_to_show = 256
-
+    
+npix_orig = density_map.shape[0]
 npix_to_show = args.npix
-
 density_map = density_map[-npix_to_show:,-npix_to_show:,-npix_to_show:]
+
+fout_prefix = "{}/{}_sfrmin{}".format(args.output_dir, args.stats_name, str(args.sfrmin))
+if args.npix != npix_to_show:
+    fout_prefix += "_npix{:d}".format(args.npix, args.fname_id)
+fout_prefix += "_{}".format(args.fname_id)
 
 if args.fname_id == "TNG":
     file_name_list_cat = ["../data/mesh/TNG300-1/TNG300-1_33.h5"]
+    fout_list = [ fout_prefix + ".txt" ]
 else:
     file_name_list_cat = [ "{}/{}.seed{:d}.h5".format(args.base_dir, args.fname_id, seed) for seed in range(args.seed_start, args.seed_end) ]
+    fout_list = [ fout_prefix + ".seed{:d}".format(seed) for seed in range(args.seed_start, args.seed_end)]
 
 for i_cat, file_name in enumerate(file_name_list_cat):
+
+    fout = fout_list[i_cat]
+    if (args.stats_name == "r_profile") and os.path.exists(fout):
+        print("{} exists. Skip".format(fout))
+        break 
 
     if not os.path.exists(file_name):
         print("File {} does not exsits. break.".format(file_name))
         break
 
+    ### Load data
     cat, header = load_catalog_data(file_name)        
     if args.fname_id== "TNG":
-        xmin = 205000 * (args.npix_orig - npix_to_show) / args.npix_orig
-        mask = (cat[:,pos_idx[0]]>xmin) & (cat[:,pos_idx[1]] > xmin) & (cat[:,pos_idx[2]] > xmin)
-        cat = cat[mask]
-        cat[:,pos_idx] -= xmin
-        header["BoxSize"] *= npix_to_show / args.npix_orig
+        npix_data = npix_orig
     else:
-        npix_to_use =  header["npix_to_use"]
-        xmin = header["BoxSize"] * (npix_to_use - npix_to_show) / npix_to_use
-        mask = (cat[:,pos_idx[0]]>xmin) & (cat[:,pos_idx[1]] > xmin) & (cat[:,pos_idx[2]] > xmin)
-        cat = cat[mask]
-        cat[:,pos_idx] -= xmin
-        header["BoxSize"] *= npix_to_show / npix_to_use
+        npix_data = header["npix_to_use"]
+        
+    ### Cut out
+    npix_data =  header["npix_to_use"]
+    xmin = header["BoxSize"] * (npix_data - npix_to_show) / npix_data
+    cat[:,pos_idx] -= xmin
+
+    mask = (cat[:,pos_idx[0]]>0) & (cat[:,pos_idx[1]] > 0) & (cat[:,pos_idx[2]] > 0)
+    cat = cat[mask]
+
+    header["BoxSize"] *= npix_to_show / npix_data
 
     cat = np.random.permutation(cat)
     mask = cat[:,sfr_idx] > args.sfrmin
@@ -195,22 +200,8 @@ for i_cat, file_name in enumerate(file_name_list_cat):
 
     cat[:,pos_idx] = cat[:,pos_idx] / 1e3
     boxsize = header["BoxSize"] / 1e3
-
-    if args.fname_id == "TNG":
-        if args.npix == npix_to_show:
-            fout = "{}/{}_sfrmin{}_TNG.txt".format(args.output_dir, args.stats_name, str(args.sfrmin))    
-        else:
-            fout = "{}/power_sfrmin{}_npix{:d}_TNG.txt".format(args.output_dir, str(args.sfrmin), args.npix)
-    else:
-        if args.npix == npix_to_show:
-            fout = "{}/{}_sfrmin{}_{}.seed{:d}.txt".format(args.output_dir, args.stats_name, str(args.sfrmin), args.fname_id, i_cat)
-        else:
-            fout = "{}/{}_sfrmin{}_npix{:d}_{}.seed{:d}.txt".format(args.output_dir, args.stats_name, str(args.sfrmin), args.npix, args.fname_id, i_cat)
-            
-    if ("r_profile" in fout) and os.path.exists(fout):
-        print("{} exists. Skip".format(fout))
-        break 
     
+    ### Compute statistics
     if args.stats_name == "power":
         calc_power(cat, boxsize, fout)
     elif args.stats_name == "cross_power":

@@ -52,7 +52,7 @@ def sample_galaxies(args, x_in, global_params=None, verbose=True):
         opt.norm_param_dict = namespace_to_dict(opt.norm_param_dict)
 
     model = transformer_model(opt)
-    model.load_state_dict(torch.load("{}/model.pth".format(args.model_dir), map_location="cpu"))
+    model.load_state_dict(torch.load("{}/model{}.pth".format(args.model_dir, args.model_label), map_location="cpu"))
     model.to(device)
     model.eval()
     
@@ -128,11 +128,11 @@ def sample_galaxies_TransNF(args, x_in, global_params=None, verbose=True):
 
     model, flow = transformer_nf_model(opt)
 
-    model.load_state_dict(torch.load("{}/model.pth".format(args.model_dir), map_location="cpu"))
+    model.load_state_dict(torch.load("{}/model{}.pth".format(args.model_dir, args.model_label), map_location="cpu"))
     model.to(device)
     model.eval()
     
-    flow.load_state_dict(torch.load("{}/flow.pth".format(args.model_dir), map_location="cpu"))
+    flow.load_state_dict(torch.load("{}/flow{}.pth".format(args.model_dir, args.model_label), map_location="cpu"))
     flow.to(device)
     flow.eval()
 
