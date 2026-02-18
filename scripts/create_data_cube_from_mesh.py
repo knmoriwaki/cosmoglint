@@ -20,6 +20,8 @@ import astropy.units as u
 from cosmoglint.utils import normalize, namespace_to_dict,get_index_list
 from cosmoglint.utils.io_utils import load_mesh_data, save_hdf5_intensity_data, save_hdf5_catalog_data
 from cosmoglint.sampling import sample_galaxies_from_mesh_continuous
+from cosmoglint.model.transformer import transformer_model
+
 
 cspeed = 3e10 # [cm/s]
 micron = 1e-4 # [cm]
@@ -76,13 +78,11 @@ def create_data(args):
     torch.backends.cudnn.benchmark = False
     np.random.seed(args.seed)
 
-    ### Load model
-    print("# Load model from {}".format(args.model_dir))
-
-    from cosmoglint.model.transformer import transformer_model
     device = torch.device("cuda:{}".format(args.gpu_id) if torch.cuda.is_available() else "cpu")
     print("# Using device: {}".format(device))
 
+    ### Load model
+    print("# Load model from {}".format(args.model_dir))
     with open("{}/args.json".format(args.model_dir), "r") as f:
         opt = json.load(f, object_hook=lambda d: argparse.Namespace(**d))
         opt.norm_param_dict = namespace_to_dict(opt.norm_param_dict)
@@ -101,13 +101,12 @@ def create_data(args):
         opt.batch_size = args.batch_size
 
     ### Load input data
-    x_in, pixel_size = load_mesh_data(args.input_fname, opt.input_features, norm_param_dict=opt.norm_param_dict)
-
-    #if opt.pixel_size != pixel_size:
-    #    raise ValueError("Pixel size of the input data is different from the training data")
-    
+    x_in, pixel_size = load_mesh_data(args.input_fname, opt.input_features, norm_param_dict=opt.norm_param_dict)    
     if args.npix_to_use > 0:
         x_in = x_in[-args.npix_to_use:, -args.npix_to_use:, -args.npix_to_use:]
+    args.BoxSize = pixel_size * x_in.shape[0]
+    with h5py.File(args.input_fname, "r") as f:
+        args.redshift = f["Header"].attrs["Redshift"]
 
     x_in = torch.from_numpy(x_in).float().to(device)
 
@@ -157,10 +156,20 @@ def create_data(args):
     val_idx = opt.output_features.index( args.intensity_name ) 
     
     val = generated[:,val_idx].copy() # (N, )
-    args.BoxSize = pixel_size * x_in.shape[0]
 
+    ### Save galaxy catalog
+    if args.output_catalog_fname != "none":
+        print("# Generate catalog of galaxies")
+        
+        catalog_threshold = max(args.threshold, args.catalog_threshold)
+        valid_mask = val > catalog_threshold
+        generated_valid = generated[valid_mask]
+
+        save_hdf5_catalog_data(generated_valid, args, opt.output_features, args.output_catalog_fname)
+        
     ### Save intensity map
     if args.output_fname != "none":
+        print("# Assign galaxies to pixels")
         pos = generated[:,pos_idx].copy() # (N, 3)
         pos_real = pos.copy()
 
@@ -170,14 +179,9 @@ def create_data(args):
             iy_vel = None
 
         if iy_vel is not None:
-            ### Load redshift
-            with h5py.File(args.input_fname, "r") as f:
-                redshift = f["Header"].attrs["Redshift"]
-                
-            args.redshift = redshift
-            H = cosmo.H(redshift).to(u.km/u.s/u.Mpc).value #[km/s/Mpc]
+            H = cosmo.H(args.redshift).to(u.km/u.s/u.Mpc).value #[km/s/Mpc]
             hlittle = cosmo.H(0).to(u.km/u.s/u.Mpc).value / 100.0 
-            scale_factor = 1 / (1 + redshift)
+            scale_factor = 1 / (1 + args.redshift)
 
             vz = generated[:,iy_vel[-1]].copy() # (N, ) [km/s]
             pos[:,2] += vz / scale_factor / H * hlittle
@@ -198,8 +202,6 @@ def create_data(args):
             np.add.at(intensity, (ix_valid[:, 0], ix_valid[:, 1], ix_valid[:, 2]), flux_valid)
 
             return intensity
-        
-        print("# Assign galaxies to pixels")
 
         intensities = []
         for pos in pos_list:
@@ -209,16 +211,6 @@ def create_data(args):
         keys = ["intensity", "intensity_rsd"]
 
         save_hdf5_intensity_data(intensities, args, keys, args.output_fname)
-
-    ### Save galaxy catalog
-    if args.output_catalog_fname != "none":
-        print("# Generate catalog of galaxies")
-        
-        catalog_threshold = max(args.threshold, args.catalog_threshold)
-        valid_mask = val > catalog_threshold
-        generated_valid = generated[valid_mask]
-
-        save_hdf5_catalog_data(generated_valid, args, opt.output_features, args.output_catalog_fname)
 
 if __name__ == "__main__":
     args = parse_args()
