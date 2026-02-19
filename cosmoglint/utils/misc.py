@@ -67,6 +67,8 @@ def make_density_map(pos, npix, weight=1.0, mode="CIC", periodic=False):
     
     return map
 
+import torch
+from torch.utils.data import WeightedRandomSampler
 
 def get_sampler(x, xmin, xmax, nbins=20, temperature=1, weight_min=1e-8):
         x = x.detach().to("cpu")
