@@ -120,7 +120,7 @@ class HaloDataset(Dataset):
 
         if global_params is not None:
             if len(global_params) != len(args.data_path):
-                raise ValueError("The number of global parameter sets must match the number of data files")
+                raise ValueError("The number of global parameter sets ({:d}) must match the number of data files ({:d})".format(len(global_params), len(args.data_path)))
 
         x = []
         self.y = []

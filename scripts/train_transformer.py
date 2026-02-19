@@ -92,7 +92,7 @@ def train_model(args):
         istart = int(indices[0])
         iend = int(indices[1])
         print(f"# Using data files from {istart} to {iend}")
-        data_path = [ data_path[0].replace("*", str(i)) for i in range(istart, iend+1) ]
+        args.data_path = [ data_path[0].replace("*", str(i)) for i in range(istart, iend+1) ]
         
         if global_params is not None:
             global_params = global_params[istart:iend+1, :]
