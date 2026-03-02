@@ -294,11 +294,12 @@ def create_data(args):
                 return intensity
             
             intensities = []
-            for pos in pos_list:
+            output_features = []
+            for i, pos in enumerate(pos_list):
                 intensity = make_intensity_map(pos, sfr)
                 intensities.append(intensity)
-
-            save_hdf5_intensity_data(intensities, args, args.output_fname)
+                output_features.append("intensity_{:d}".format(i))
+            save_hdf5_intensity_data(intensities, args, output_features, args.output_fname)
 
 
 if __name__ == "__main__":

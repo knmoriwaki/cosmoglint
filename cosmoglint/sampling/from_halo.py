@@ -12,7 +12,7 @@ import numpy as np
 
 import torch
 
-from cosmoglint.utils import normalize, namespace_to_dict
+from cosmoglint.utils import normalize, namespace_to_dict, load_global_params
 
 def create_mask(array, threshold): 
     """
@@ -67,9 +67,11 @@ def sample_galaxies(args, x_in, global_params=None, verbose=True):
     x_in = torch.from_numpy(x_in).float().to(device)
 
     if global_params is not None:
-        global_params = global_params[opt.global_features].to_numpy(dtype=np.float32)
-        for i, key in enumerate(opt.global_features):
-            global_params[...,i] = normalize(global_params[...,i], key, opt.norm_param_dict)
+        #global_params = global_params[opt.global_features]#.to_numpy(dtype=np.float32)
+        #for i, key in enumerate(opt.global_features):
+        #global_params[...,i] = normalize(global_params[...,i], key, opt.norm_param_dict)
+        global_params = load_global_params(args.global_param_file, opt.global_features, norm_param_dict=opt.norm_param_dict)
+        global_params = global_params[args.global_param_id]
         global_params = torch.tensor(np.array(global_params), dtype=torch.float32).to(device)
 
     if args.max_sfr_file is None:
@@ -94,10 +96,8 @@ def sample_galaxies(args, x_in, global_params=None, verbose=True):
         generated.append(generated_batch.cpu().detach().numpy())
         
     generated = np.concatenate(generated, axis=0) # (num_halos, seq_length, num_features) or (num_halos, seq_length * num_features, 1)
-
     if opt.use_flat_representation:
         generated = generated.squeeze(-1).reshape(len(generated), -1, opt.num_features_in) # (num_halos, max_length, num_features) 
-        mask = mask.reshape(len(mask), -1, opt.num_features_in)
 
     mask = create_mask(generated[:,:,0], stop_criterion) # (num_halos, seq_length)
 
