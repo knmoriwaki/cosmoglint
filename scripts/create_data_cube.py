@@ -30,7 +30,8 @@ def parse_args():
 
     ### I/O parameters
     parser.add_argument("--input_fname", type=str, default="group.txt", help="Input filename")
-    parser.add_argument("--output_fname", type=str, default="test.h5", help="Output filename")
+    parser.add_argument("--output_fname", type=str, default="none", help="Output filename")
+    parser.add_argument("--output_catalog_fname", type=str, default="none", help="Output filename")
     parser.add_argument("--global_param_file", type=str, default=None, help="File containing global parameters")
     parser.add_argument("--global_param_id", type=int, default=0, help="Row ID in the global parameter file")
 
@@ -263,7 +264,7 @@ def create_data(args):
             relative_vel_rad[flag_central] = 0 # Set vr to 0 for central galaxies
             alpha = np.random.uniform(0, 2 * np.pi, size=num_gal)
             vz_gal = - relative_vel_rad * cos_theta + relative_vel_tan * sin_theta * np.cos(alpha)
-            pos_galaxies[:,2] += ( vel_central[:,2] + vz_gal )/ scale_factor / H * hlittle
+            pos_galaxies[:,2] += ( vel_central[:,2] + vz_gal )/ scale_factor / H * hlittle 
         
         if args.gen_both:
             pos_list = [pos_galaxies_real, pos_galaxies]
@@ -271,16 +272,16 @@ def create_data(args):
             pos_list = [pos_galaxies]
 
         ### Save
-        if args.gen_catalog:
+        if args.output_catalog_fname != "none":
             print("# Generate catalog of galaxies")
             pos_valid = []
             for pos in pos_list:
                 valid_mask = sfr > args.catalog_threshold
                 pos_valid.append(pos[valid_mask])
                 sfr_valid = sfr[valid_mask]
-            my_save_catalog_data(pos_valid, sfr_valid, args, args.output_fname)
+            my_save_catalog_data(pos_valid, sfr_valid, args, args.output_catalog_fname)
 
-        else:
+        if args.output_fname != "none":
             print("# Assign galaxies to pixels")
             def make_intensity_map(pos, flux):
                 ix_galaxies = (pos / dx_pix).astype(int) # (num_galaxies_valid, 3)    
