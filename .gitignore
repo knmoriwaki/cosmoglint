@@ -10,3 +10,4 @@ build/
 *.tar.gz
 scripts/calc_statistics/
 data/
+notebooks/*.txt

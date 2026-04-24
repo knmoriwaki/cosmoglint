@@ -1,0 +1,57 @@
+{
+    "GroupMass": {
+        "min": 11.0,
+        "max": 14.0,
+        "norm": "log"
+    },
+    "SubhaloSFR": {
+        "min": -3.2,
+        "max": 3.2,
+        "norm": "log"
+    },
+    "SubhaloDist": {
+        "min": -3.0,
+        "max": 1.0,
+        "norm": "log"
+    },
+    "SubhaloVrad": {
+        "min": -4.0,
+        "max": 4.0,
+        "norm": "log_with_sign"
+    },
+    "SubhaloVtan": {
+        "min": -2.0,
+        "max": 4.0,
+        "norm": "log"
+    },
+    "Omega_m": {
+        "min": 0.1,
+        "max": 0.5,
+        "norm": "linear"
+    },
+    "sigma_8": {
+        "min": 0.6,
+        "max": 1.0,
+        "norm": "linear"
+    },
+    "A_SN1": {
+        "min": 0.25,
+        "max": 4.0,
+        "norm": "linear"
+    },
+    "A_SN2": {
+        "min": 0.5,
+        "max": 2.0,
+        "norm": "linear"
+    },
+    "A_AGN1": {
+        "min": 0.25,
+        "max": 4.0,
+        "norm": "linear"
+    },
+    "A_AGN2": {
+        "min": 0.5,
+        "max": 2.0,
+        "norm": "linear"
+    }
+}
