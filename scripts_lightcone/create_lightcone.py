@@ -10,16 +10,14 @@ from tqdm import tqdm
 
 import numpy as np
 
-import numpy as np
-
 import torch
+
+import time
 
 #from astropy.cosmology import Planck15 as cosmo
 from astropy.cosmology import FlatLambdaCDM
 cosmo = FlatLambdaCDM(H0=67.74, Om0=0.3089)
 import astropy.units as u
-
-from cosmoglint.utils.io_utils import load_lightcone_data
 
 cspeed = 3e10  # [cm/s]
 
@@ -140,6 +138,8 @@ def create_mock(args):
         else:
             max_sfr_file_list = ["{}/max_nbin20_{:d}.txt".format(args.param_dir, snapshot_number) for snapshot_number in snapshot_dict]
 
+        time_start = time.time()
+
         for i, snapshot_number in enumerate(snapshot_dict):
             model_path, redshift_of_snapshot = snapshot_dict[snapshot_number]
             print("# Snapshot number: {:d}, Redshift: {:.2f}".format(snapshot_number, redshift_of_snapshot))
@@ -231,6 +231,8 @@ def create_mock(args):
             redshift_rest = pos_galaxies[:,2]
             pos_galaxies[:,2] = ( 1. + redshift_rest ) * np.sqrt( (1. + beta) / (1. - beta) ) - 1.0
 
+        print(f"# Elapsed time: {time.time() - time_start} sec")
+
         if args.gen_catalog:
 
             mask = (sfr > args.catalog_threshold)
@@ -290,7 +292,88 @@ def create_mock(args):
                 print("SFR map saved to {}".format(args.output_fname))
 
             else:
-                print("No valid galaxies found within the specified bounds. No data saved.")        
+                print("No valid galaxies found within the specified bounds. No data saved.") 
+
+
+def load_lightcone_data(input_fname, cosmo):
+    print(f"# Load {input_fname}")
+
+    if "pinocchio" in input_fname: 
+        if "old_version" in input_fname:
+            M, theta, phi, _, redshift_obs, redshift_real = load_old_plc(input_fname)
+            mass = M
+        else:
+            import ReadPinocchio5 as rp
+            myplc = rp.plc(input_fname)
+            
+            mass = myplc.data["Mass"] 
+            theta = myplc.data["theta"] # [arcsec]
+            phi = myplc.data["phi"]
+
+            redshift_obs = myplc.data["obsz"]
+            redshift_real = myplc.data["truez"]
+
+        import astropy.units as u
+        hlittle = cosmo.H(0).to(u.km/u.s/u.Mpc).value / 100.0 
+        mass /= hlittle # [Msun]
+
+        theta = ( 90. - theta ) * 3600 # [arcsec]
+        pos_x = theta * np.cos( phi * np.pi / 180. ) # [arcsec] 
+        pos_y = theta * np.sin( phi * np.pi / 180. ) # [arcsec]
+        
+        print("# Minimum log mass in catalog: {:.5f}".format(np.min(np.log10(mass))))
+        print("# Maximum pos: ({:.3f}, {:.3f}) arcsec".format(np.max(pos_x), np.max(pos_y)))
+        print("# Minimum pos: ({:.3f}, {:.3f}) arcsec".format(np.min(pos_x), np.min(pos_y)))
+        print("# Redshift: {:.3f} - {:.3f}".format(np.min(redshift_real), np.max(redshift_real)))
+        print("# Number of halos: {}".format(len(mass)))
+
+    else:
+        raise ValueError("Unknown input file format")
+    
+    return mass, pos_x, pos_y, redshift_obs, redshift_real
+
+
+def load_old_plc(filename):
+    import struct
+
+    plc_struct_format = "<Q d ddd ddd ddddd"  # Q=uint64, d=double, little-endian
+    plc_size = struct.calcsize(plc_struct_format)
+
+    M_list = []
+    th_list = []
+    ph_list = []
+    vl_list = []
+    zo_list = []
+    z_list = []
+    with open(filename, "rb") as f:
+        while True:
+            dummy_bytes = f.read(4)
+            if not dummy_bytes:
+                break  # EOF
+            dummy = struct.unpack("<i", dummy_bytes)[0]
+
+            plc_bytes = f.read(dummy)
+            if len(plc_bytes) != dummy:
+                break  
+
+            data = struct.unpack(plc_struct_format, plc_bytes)
+            (
+                id, z, x1, x2, x3, v1, v2, v3,
+                M, th, ph, vl, zo
+            ) = data
+
+            dummy2_bytes = f.read(4)
+            dummy2 = struct.unpack("<i", dummy2_bytes)[0]
+
+            M_list.append(M)
+            th_list.append(th)
+            ph_list.append(ph)
+            vl_list.append(vl)
+            zo_list.append(zo)
+            z_list.append(z)
+    
+    return np.array(M_list), np.array(th_list), np.array(ph_list), np.array(vl_list), np.array(zo_list), np.array(z_list)
+       
         
 if __name__ == "__main__":
     args = parse_args()

@@ -101,7 +101,7 @@ def create_data(args):
         match = re.search(r'pinocchio\.([0-9]+\.[0-9]+)', args.input_fname)
         redshift = float(match.group(1))
             
-        import cosmoglint.utils.ReadPinocchio5 as rp
+        import ReadPinocchio5 as rp
         mycat = rp.catalog(args.input_fname)
         
         hlittle = cosmo.H(0).to(u.km/u.s/u.Mpc).value / 100.0 
