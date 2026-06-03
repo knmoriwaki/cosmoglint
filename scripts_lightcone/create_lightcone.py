@@ -19,8 +19,8 @@ from astropy.cosmology import FlatLambdaCDM
 cosmo = FlatLambdaCDM(H0=67.74, Om0=0.3089)
 import astropy.units as u
 
-cspeed = 3e10  # [cm/s]
 
+cspeed = 3e10  # [cm/s]
 
 def parse_args():
 
@@ -32,6 +32,8 @@ def parse_args():
     ### I/O parameters
     parser.add_argument("--input_fname", type=str, default="./Pinocchio/output/pinocchio.r01000.plc.out")
     parser.add_argument("--output_fname", type=str, default="test.h5")
+    parser.add_argument("--global_param_file", type=str, default=None, help="File containing global parameters")
+    parser.add_argument("--global_param_id", type=int, default=0, help="Row ID in the global parameter file")
 
     ### Output format parameters
     parser.add_argument("--redshift_space", action="store_true", default=False, help="Use redshift space")
@@ -52,15 +54,108 @@ def parse_args():
 
     parser.add_argument("--side_length", type=float, default=300.0, help="side length in arcsec")
     parser.add_argument("--angular_resolution", type=float, default=30, help="angular resolution in arcsec. Not used if gen_catalog is set.")
+
+    parser.add_argument("--intensity_unit", type=str, default="Jy/sr", help="Intensity unit to use. Default is Jy/sr.")
+
     
     ### Generative model parameters
-    parser.add_argument("--model_dir", type=str, default=None, help="The directory of the model. If not given, use 4th column as intensity.")
+    parser.add_argument("--model_dir", type=str, default=None, help="The directory of the model.")
     parser.add_argument("--model_config_file", type=str, default="model_config.json", help="The configuration file for the model")
     parser.add_argument("--param_dir", type=str, default=None, help="The directory of the parameter files")
 
     return parser.parse_args()
 
-def create_mock(args):
+def generate_galaxies_in_multiple_redshifts(
+        args, 
+        x_in, 
+        pos,
+        redshift_real
+    ):
+    
+    ### Load global parameters
+    with open("{}/args.json".format(args.model_dir), "r") as f:
+        opt = json.load(f, object_hook=lambda d: argparse.Namespace(**d))
+
+    if args.global_param_file is not None:
+        from cosmoglint.utils.io_utils import load_global_params
+        global_params = load_global_params(args.global_param_file, opt.global_features)[args.global_param_id] 
+    else:
+        global_params = None
+
+    ### Reset opt
+    opt = copy.deepcopy(args)
+
+    generated_all = []
+    pos_central_all = [] 
+    redshift_central_all = [] 
+    flag_central_all = []
+
+    with open(args.model_config_file, "r") as f:
+        snapshot_dict_str = json.load(f)
+        snapshot_dict = {int(k): v for k, v in snapshot_dict_str.items()}
+
+    print("# Model config:", snapshot_dict)
+    redshifts_of_snapshots = np.array([ v[1] for v in snapshot_dict.values() ])    
+    bin_edges = (redshifts_of_snapshots[:-1] + redshifts_of_snapshots[1:]) / 2.0
+    bin_indices = np.digitize(redshift_real, bin_edges)  
+
+    for i, snapshot_number in enumerate(snapshot_dict):
+        model_path, redshift_of_snapshot = snapshot_dict[snapshot_number]
+        print("# Snapshot number: {:d}, Redshift: {:.2f}".format(snapshot_number, redshift_of_snapshot))
+        
+        ### Skip if no haloes in this redshift bin
+        mask_z = (bin_indices == i)
+        if not np.any(mask_z):
+            print("# No haloes in redshift bin {:d} (snapshot number {:d}), skipping...".format(i, snapshot_number))
+            continue
+    
+        x_now = x_in[mask_z, None] # (num_halos_in_bin, 1)
+        pos_now = pos[mask_z] # (num_halos_in_bin, 3)
+        redshift_now = redshift_real[mask_z] # (num_halos_in_bin, 1)
+
+        opt.model_dir = "{}/{}".format(args.model_dir, model_path)
+        opt.max_sfr_file = "{}/max_nbin20_{:d}.txt".format(args.param_dir, snapshot_number) if args.param_dir is not None else None
+
+        if "Transformer_NF" in opt.model_dir:
+            from cosmoglint.sampling import sample_galaxies_TransNF
+            generated, mask = sample_galaxies_TransNF(opt, x_now, global_params=global_params, verbose=False)
+        else:
+            from cosmoglint.sampling import sample_galaxies
+            generated, mask = sample_galaxies(opt, x_now, global_params=global_params, verbose=False)
+            
+        seq_length = mask.shape[1]
+        num_features = generated.shape[-1]
+
+        # Define flag_central
+        flag_central = np.zeros_like(mask, dtype=bool)
+        flag_central[:, 0] = True
+
+        # Flatten the arrays
+        mask = mask.reshape(-1)
+        generated = generated.reshape(-1, num_features) # (num_halos * seq_length, num_features)
+        pos_central = np.repeat(pos_now[:,None,:], seq_length, axis=1).reshape(-1, 3) # (num_halos * seq_length, 3)
+        redshift_central = np.repeat(redshift_now[:,None], seq_length, axis=1).reshape(-1) # (num_halos * seq_length)
+        flag_central = flag_central.reshape(-1)
+
+        # Apply mask to arrays
+        generated = generated[mask] # (num_galaxies_valid, num_features)
+        pos_central = pos_central[mask] # (num_galaxies_valid, 3)
+        redshift_central = redshift_central[mask] # (num_galaxies_valid, 3)
+        flag_central = flag_central[mask] # (num_galaxies_valid, )
+        
+        # Append
+        generated_all.append(generated)
+        pos_central_all.append(pos_central)
+        redshift_central_all.append(redshift_central)
+        flag_central_all.append(flag_central)
+
+    generated_all = np.concatenate(generated_all, axis=0) # (num_galaxies_valid, num_features)
+    pos_central_all = np.concatenate(pos_central_all, axis=0)
+    redshift_central_all = np.concatenate(redshift_central_all, axis=0) # (num_galaxies_valid,)
+    flag_central_all = np.concatenate(flag_central_all, axis=0) # (num_galaxies_valid,)
+    return generated_all, pos_central_all, redshift_central_all, flag_central_all
+
+def create_lightcone(args):
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed(args.seed)
     torch.backends.cudnn.deterministic = True
@@ -76,7 +171,8 @@ def create_mock(args):
     if args.gen_both:
         NotImplementedError("Generating both real and redshift space data is not implemented yet.")
 
-    ### Load data
+    ### Load data ###
+
     mass, pos_x, pos_y, redshift_obs, redshift_real = load_lightcone_data(args.input_fname, cosmo=cosmo)
     mass *= args.mass_correction_factor
 
@@ -93,14 +189,11 @@ def create_mock(args):
         print("# Using real space")
         redshift_obs = copy.deepcopy(redshift_real)
 
-    ### Load global parameters
-    if args.global_param_file is not None:
-        global_params_all = np.genfromtxt(args.global_param_file, names=True, dtype=None, encoding="utf-8")
-        global_params = global_params_all[args.global_param_id]
-    else:
-        global_params = None
+    with open("{}/args.json".format(args.model_dir), "r") as f:
+        opt = json.load(f, object_hook=lambda d: argparse.Namespace(**d))
 
-    ### Mask out small halos
+    ### Mask small halos ###
+
     mask = (np.log10(mass) > args.logm_min)
     mask = mask & (redshift_obs >= args.redshift_min) & (redshift_obs <= args.redshift_max)
     
@@ -111,188 +204,100 @@ def create_mock(args):
     redshift_obs = redshift_obs[mask] # Observed redshift if redshift_space is True, otherwise equals to redshift_real
 
     pos = np.stack([pos_x, pos_y, redshift_obs], axis=1) # (num_halos, 3)
+
+    time_start = time.time()
+
+    ### Generate galaxies ###
+
+    generated_all, pos_central_all, redshift_central_all, flag_central_all = generate_galaxies_in_multiple_redshifts(
+        args,
+        x_in = mass,
+        pos = pos,
+        redshift_real = redshift_real
+    )
+    num_gal = len(generated_all)
+
+    ### Determine positions of galaxies ###
+
+    print("# Generate positions of galaxies")
+    _phi = np.random.uniform(0, 2 * np.pi, size=num_gal)
+    _cos_theta = np.random.uniform(-1, 1, size=num_gal)
+    _sin_theta = np.sqrt(1 - _cos_theta ** 2)
+    
+    from cosmoglint.utils.cosmology_utils import cMpc_to_arcsec, dcMpc_to_dz
+    i_dist = opt.output_features.index("SubhaloDist")
+    distance = generated_all[:,i_dist]
+    distance_arcsec = cMpc_to_arcsec(distance, redshift_central_all, cosmo=cosmo, l_with_hlittle=True)
+    distance_z = dcMpc_to_dz(distance, redshift_central_all, cosmo=cosmo, l_with_hlittle=True)
+
+    pos_galaxies = pos_central_all
+    pos_galaxies[:,0] += distance_arcsec * _sin_theta * np.cos(_phi)
+    pos_galaxies[:,1] += distance_arcsec * _sin_theta * np.sin(_phi)
+    pos_galaxies[:,2] += distance_z * _cos_theta
+    
+    ### Add redshift-space distortion ###
+
+    if args.redshift_space:
+
+        relative_vel_rad = generated_all[:,2]
+        relative_vel_tan = generated_all[:,3]
+        relative_vel_rad[flag_central_all] = 0 # Set vr to 0 for central galaxies
+        alpha = np.random.uniform(0, 2 * np.pi, size=num_gal)
+        vz_gal = - relative_vel_rad * _cos_theta + relative_vel_tan * _sin_theta * np.cos(alpha)
         
-    ### Create mock data
-    if args.model_dir == None:
-        ValueError("Please specify the model directory with --model_dir")
+        beta = vz_gal / (cspeed * 100) # [(km/s) / (km/s)]
+
+        redshift_rest = pos_galaxies[:,2]
+        pos_galaxies[:,2] = ( 1. + redshift_rest ) * np.sqrt( (1. + beta) / (1. - beta) ) - 1.0
+
+    print(f"# Elapsed time: {time.time() - time_start} sec")
+
+    if args.gen_catalog:
+
+        ### Generate catalog ###
+
+        mask = (generated_all[:,0] > args.catalog_threshold)
+        pos_galaxies = pos_galaxies[mask]
+        redshift = redshift_central_all[mask]
+        luminosity_list = [ luminosity[mask] for luminosity in luminosity_list ]
         
+        with h5py.File(args.output_fname, "w") as f:
+            
+            args_dict = vars(args)
+            args_dict = {k: (v if v is not None else "None") for k, v in args_dict.items()}
+            for key, value in args_dict.items():
+                f.attrs[key] = value
+
+            f.create_dataset("Redshifts", data=redshift, compression="gzip")
+            f.create_dataset("Positions", data=pos_galaxies, compression="gzip")
+            
+            for iparam, key in enumerate(opt.output_features):
+                f.create_dataset(key, data=generated_all[:,iparam], compression="gzip")
+        
+        print("Galaxy catalog saved to {}".format(args.output_fname))
+
     else:
-        opt = copy.deepcopy(args)
-
-        generated_all = []
-        pos_central_all = [] 
-        redshift_central_all = [] 
-        flag_central_all = []
-
-        with open(args.model_config_file, "r") as f:
-            snapshot_dict_str = json.load(f)
-            snapshot_dict = {int(k): v for k, v in snapshot_dict_str.items()}
-
-        print("# Model config:", snapshot_dict)
-        redshifts_of_snapshots = np.array([ v[1] for v in snapshot_dict.values() ])    
-        bin_edges = (redshifts_of_snapshots[:-1] + redshifts_of_snapshots[1:]) / 2.0
-        bin_indices = np.digitize(redshift_real, bin_edges)  
-
-        if args.param_dir is None:
-            max_sfr_file_list = [ None for snapshot_number in snapshot_dict ]
-        else:
-            max_sfr_file_list = ["{}/max_nbin20_{:d}.txt".format(args.param_dir, snapshot_number) for snapshot_number in snapshot_dict]
-
-        time_start = time.time()
-
-        for i, snapshot_number in enumerate(snapshot_dict):
-            model_path, redshift_of_snapshot = snapshot_dict[snapshot_number]
-            print("# Snapshot number: {:d}, Redshift: {:.2f}".format(snapshot_number, redshift_of_snapshot))
-            
-            ### Skip if no haloes in this redshift bin
-            mask_z = (bin_indices == i)
-            if not np.any(mask_z):
-                print("# No haloes in redshift bin {:d} (snapshot number {:d}), skipping...".format(i, snapshot_number))
-                continue
         
-            x_now = mass[mask_z, None] # (num_halos_in_bin, 1)
-            pos_now = pos[mask_z] # (num_halos_in_bin, 3)
-            redshift_now = redshift_real[mask_z] # (num_halos_in_bin, 1)
+        ### Generate line intensity map ###
 
-            opt.model_dir = "{}/{}".format(args.model_dir, model_path)
-            opt.max_sfr_file = max_sfr_file_list[i]
-
-            if "Transformer_NF" in opt.model_dir:
-                from cosmoglint.sampling import sample_galaxies_TransNF
-                generated, mask = sample_galaxies_TransNF(opt, x_now, global_params=global_params, verbose=False)
-            else:
-                from cosmoglint.sampling import sample_galaxies
-                generated, mask = sample_galaxies(opt, x_now, global_params=global_params, verbose=False)
-                
-            seq_length = mask.shape[1]
-            num_features = generated.shape[-1]
-
-            # Define flag_central
-            flag_central = np.zeros_like(mask, dtype=bool)
-            flag_central[:, 0] = True
-
-            # Flatten the arrays
-            mask = mask.reshape(-1)
-            generated = generated.reshape(-1, num_features) # (num_halos * seq_length, num_features)
-            pos_central = np.repeat(pos_now[:,None,:], seq_length, axis=1).reshape(-1, 3) # (num_halos * seq_length, 3)
-            redshift_central = np.repeat(redshift_now[:,None], seq_length, axis=1).reshape(-1) # (num_halos * seq_length)
-            flag_central = flag_central.reshape(-1)
-
-            # Apply mask to arrays
-            generated = generated[mask] # (num_galaxies_valid, num_features)
-            pos_central = pos_central[mask] # (num_galaxies_valid, 3)
-            redshift_central = redshift_central[mask] # (num_galaxies_valid, 3)
-            flag_central = flag_central[mask] # (num_galaxies_valid, )
-            
-            # Append
-            generated_all.append(generated)
-            pos_central_all.append(pos_central)
-            redshift_central_all.append(redshift_central)
-            flag_central_all.append(flag_central)
-
-        generated_all = np.concatenate(generated_all, axis=0) # (num_galaxies_valid, num_features)
-        pos_central_all = np.concatenate(pos_central_all, axis=0)
-        redshift_central_all = np.concatenate(redshift_central_all, axis=0) # (num_galaxies_valid,)
-        flag_central_all = np.concatenate(flag_central_all, axis=0) # (num_galaxies_valid,)
-        
-        ### Distribute galaxies in lightcone
-        sfr = generated_all[:,0]
-        distance = generated_all[:,1]
-
-        num_gal = len(sfr)
-
-        # Determine positions of galaxies
-        print("# Generate positions of galaxies")
-        _phi = np.random.uniform(0, 2 * np.pi, size=num_gal)
-        _cos_theta = np.random.uniform(-1, 1, size=num_gal)
-        _sin_theta = np.sqrt(1 - _cos_theta ** 2)
-        
-        # Convert Mpc to deg
-        from cosmoglint.utils.cosmology_utils import cMpc_to_arcsec, dcMpc_to_dz
-        distance_arcsec = cMpc_to_arcsec(distance, redshift_central_all, cosmo=cosmo, l_with_hlittle=True)
-        distance_z = dcMpc_to_dz(distance, redshift_central_all, cosmo=cosmo, l_with_hlittle=True)
-
-        pos_galaxies = pos_central_all
-        pos_galaxies[:,0] += distance_arcsec * _sin_theta * np.cos(_phi)
-        pos_galaxies[:,1] += distance_arcsec * _sin_theta * np.sin(_phi)
-        pos_galaxies[:,2] += distance_z * _cos_theta
-        
-        # Add redshift-space distortion
-        if args.redshift_space:
-
-            relative_vel_rad = generated_all[:,2]
-            relative_vel_tan = generated_all[:,3]
-            relative_vel_rad[flag_central_all] = 0 # Set vr to 0 for central galaxies
-            alpha = np.random.uniform(0, 2 * np.pi, size=num_gal)
-            vz_gal = - relative_vel_rad * _cos_theta + relative_vel_tan * _sin_theta * np.cos(alpha)
-            
-            beta = vz_gal / (cspeed * 100) # [(km/s) / (km/s)]
-
-            redshift_rest = pos_galaxies[:,2]
-            pos_galaxies[:,2] = ( 1. + redshift_rest ) * np.sqrt( (1. + beta) / (1. - beta) ) - 1.0
-
-        print(f"# Elapsed time: {time.time() - time_start} sec")
-
-        if args.gen_catalog:
-
-            mask = (sfr > args.catalog_threshold)
-            pos_galaxies = pos_galaxies[mask]
-            redshift_real = redshift_real[mask]
-            sfr = sfr[mask]
-            
-            with h5py.File(args.output_fname, "w") as f:
-                
-                args_dict = vars(args)
-                args_dict = {k: (v if v is not None else "None") for k, v in args_dict.items()}
-                for key, value in args_dict.items():
-                    f.attrs[key] = value
-
-                f.create_dataset("Redshifts", data=redshift_real, compression="gzip")
-                f.create_dataset("Positions", data=pos_galaxies, compression="gzip")
-                f.create_dataset("SFR", data=sfr, compression="gzip")
-            
-            print("Galaxy catalog saved to {}".format(args.output_fname))
-
-        else:
-            ### Initialize the data cube and flist
-            Nx = int(args.side_length / args.angular_resolution)
-            ix = np.floor(pos_galaxies[:,0] / args.angular_resolution).astype(np.int32)
-            iy = np.floor(pos_galaxies[:,1] / args.angular_resolution).astype(np.int32)
-
-            if args.use_logz:
-                logz_min_p1 = np.log10(1 + args.redshift_min)
-                logz_max_p1 = np.log10(1 + args.redshift_max)
-                Nz = int( (logz_max_p1 - logz_min_p1) / args.dz )
-                iz = np.floor((np.log10(1 + pos_galaxies[:,2]) - logz_min_p1) / args.dz).astype(np.int32)
-            else:
-                Nz = int( (args.redshift_max - args.redshift_min) / args.dz )
-                iz = np.floor((pos_galaxies[:,2] - args.redshift_min) / args.dz).astype(np.int32)
-
-            indices = np.array([ix, iy, iz]).T # (num_galaxies, 3)
-
-            npix = np.array([Nx, Nx, Nz])
-            valid_mask = np.all((indices >= 0) & (indices < npix), axis=1)            
-
-            if np.sum(valid_mask) > 0:
-                indices_valid = indices[valid_mask]
-                sfr_valid = sfr[valid_mask]
-                
-                total_intensity = np.zeros((Nx, Nx, Nz), dtype=np.float32)
-                np.add.at(total_intensity, (indices_valid[:, 0], indices_valid[:, 1], indices_valid[:, 2]), sfr_valid)
-
-                with h5py.File(args.output_fname, "w") as f:
-
-                    args_dict = vars(args)
-                    args_dict = {k: (v if v is not None else "None") for k, v in args_dict.items()}
-                    for key, value in args_dict.items():
-                        f.attrs[key] = value
-                    
-                    f.create_dataset("SFR", data=total_intensity, compression="gzip")
-
-                print("SFR map saved to {}".format(args.output_fname))
-
-            else:
-                print("No valid galaxies found within the specified bounds. No data saved.") 
+        from line_intensity_map import create_line_intensity_map
+        i_sfr = opt.output_features.index("SubhaloSFR")
+        log_sfr = np.log10( generated_all[:,i_sfr] )
+        create_line_intensity_map(
+            pos_x=pos_galaxies[:,0],
+            pos_y=pos_galaxies[:,1],
+            z_obs=pos_galaxies[:,2],
+            z_real=redshift_central_all,
+            log_sfr=log_sfr,
+            fmin=args.fmin,
+            fmax=args.fmax,
+            R=args.R,
+            side_length=args.side_length,
+            angular_resolution=args.angular_resolution,
+            line_list=args.line_list,
+            intensity_unit=args.intensity_unit,
+            args=args
+        )
 
 
 def load_lightcone_data(input_fname, cosmo):
@@ -373,8 +378,10 @@ def load_old_plc(filename):
             z_list.append(z)
     
     return np.array(M_list), np.array(th_list), np.array(ph_list), np.array(vl_list), np.array(zo_list), np.array(z_list)
+
+
        
         
 if __name__ == "__main__":
     args = parse_args()
-    create_mock(args)
+    create_lightcone(args)
