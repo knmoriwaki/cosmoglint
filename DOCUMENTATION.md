@@ -177,7 +177,13 @@ python create_data_cube.py --input_fname [input_fname] --model_dir [model_dir]
 ```
 
 Important options:
-- `--input_fname`: Path to the halo catalog. Text file that contains halo mass [Msun] in log scale (1st column), comving positions [Mpc/h] (2nd to 4th columns), and velocities [km/s] (5th to 8th columns) and catalog in [Pinocchio](https://github.com/pigimonaco/Pinocchio) format are supported.
+- `--input_fname`: Path to the halo catalog. The following file formats are supported:
+  - HDF5 file in gadget format.
+  - Text file that contains halo mass [Msun] in log scale (1st column), comving positions [Mpc/h] (2nd to 4th columns), and velocities [km/s] (5th to 8th columns)
+  - [Pinocchio](https://github.com/pigimonaco/Pinocchio) format
+- `--output_fname`: Name of the output hdf5 file to write the generated map to (default: None).
+- `--output_catalog_fname`: Name of the output hdf5 file to write the generated catalog to (default: None).
+
 - `--model_dir`: Path to a directory containing the trained model (`model.pth` and `args.json`). If not set, column 7 of the input file is used as intensity.
 - `--boxsize`: Size of the simulation box in comoving units [Mpc/h] (default: 100.0).
 - `--redshift_space`: If set, positions are converted to redshift space using halo velocities.
@@ -188,7 +194,6 @@ Important options:
 Other options:
 - `--gpu_id`: GPU ID to use (default: 0).
 - `--seed`: Random seed for reproducibility (default: 12345).
-- `--output_fname`: Name of the output file to write the generated data to (default: test.h5).
 - `--gen_catalog`: If set, outputs a galaxy catalog instead of a 3D data cube.
 - `--catalog_threshold`: Minimum star formation rate (SFR) [Msun/yr] for galaxies to be included in the catalog (default: 10).
 - `--logm_min`: Minimum log halo mass [Msun] to be included in the mock (default: 11.0).
@@ -199,7 +204,7 @@ Other options:
 
 ---
 
-### Create SFR density map or SFR catalog
+### Create lightcone catalog or line intensity map
 
 One can also create a mock lightcone data. This requires models trained on multiple redshift.
 
@@ -217,20 +222,28 @@ Example of `model_config_file`:
 }
 ```
 
-Important options:
+#### Important options:
 - `--input_fname`: Path to the lightcone halo catalog. Pinocchio format is supported.
-- `--output_fname`: Output filename (HDF5 format).
+- `--output_fname`: Name of the output file to write the generated intensity map to (default: None).
+- `--output_catalog fname`: Name of the output file to write the generated catalog to (default: None).
 - `--model_dir`: Path to a directory containing the trained models. 
 - `--model_config_file`: Path to a JSON file that contains the names of the trained models to be used for each redshift bin. The JSON file is a dictionary where each key is a stringified snapshot ID, and the value is a list containing the model directory relative to `model_dir` and the redshift.
 - `--redshift_space`: If set, generate output in redshift space.
 - `redshift_min`, `--redshift_max`: Redshift range for the lightcone.
-- `dz`: Redshift bin width. Indicates dlogz if `--use_logz` is given.
-- `use_logz`: Use dlogz instead of dz for redshift binning.
-- `--side_length`, `--angular_resolution`: Angular size and resolution (arcsec) of the simulated map.
-- `--gen_catalog`: If set, generate a galaxy catalog with SFR greater than --catalog_threshold.
+- `--side_length`: Angular size of the simulated map in arcsec (default: 300).
+
+#### Options for catalog
 - `--catalog_threshold`: SFR threshold for inclusion in the catalog.
 
-Other options:
+#### Options for intensity map
+- `--line_list`: List of line names (default `["[CII]"]`)
+- `--angular_resolution`: Angular resolution in arcsec. (default: 30)
+- `--fmin`: Minimum frequency in GHz (default: 10)
+- `--fmax`: Maximum frequency in GHz (default: 100)
+- `--intensity_unit`: Intensity unit to use. Available options: "Jy/sr", "erg/s/cm2/Hz/beam", "erg/s/cm2/sr" (default: "Jy/sr")
+- `--sigma`: Log-normal scatter [dex] added to the luminosity–SFR relation (default: 0.2)
+
+#### Other options:
 - `--gpu_id`: GPU ID to use (default: 0).
 - `--seed`: Random seed for reproducibility (default: 12345).
 - `--param_dir`: Path to a directory containing the file of maximum normalized SFR for each mass bin (default: None).
@@ -238,39 +251,6 @@ Other options:
 - `--redshift_min`, `--redshift_max`: Minimum and maximum redshift range for the mock data.
 - `--logm_min`: Minimum log halo mass for selecting galaxies.
 - `--threshold`: Minimum SFR threshold for emission line generation.
-- `--mass_correction_factor`: Multiplier applied to halo mass before galaxy generation (default: 1.0). Useful if calibration is needed.
-
---- 
-
-### Create Line intensity map
-
-Example:
-```bash
-cd scripts_lightcone
-python create_mock.py --input_fname [input_fname] --model_dir [model_dir]
-```
-
-Important options:
-- `--input_fname`: Path to the lightcone halo catalog. Pinocchio format is supported.
-- `--output_fname`: Output filename (HDF5 format).
-- `--model_dir`: Path to a directory containing the trained models. 
-- `--model_config_file`: Path to a JSON file that contains the names of the trained models to be used for each redshift bin. The JSON file is a dictionary where each key is a stringified snapshot ID, and the value is a list containing the model directory relative to `model_dir` and the redshift.
-- `--redshift_space`: If set, generate output in redshift space.
-- `--side_length`, `--angular_resolution`: Angular size and resolution (arcsec) of the simulated map.
-- `--fmin`,`--fmax`: Frequency range [GHz] for the mock cube.
-- `--R`: Spectral resolution 
-
-Other options:
-- `--gpu_id`: GPU ID to use (default: 0).
-- `--seed`: Random seed for reproducibility (default: 12345).
-- `--param_dir`: Path to a directory containing the file of maximum normalized SFR for each mass bin (default: None).
-- `--sigma`: Log-normal scatter [dex] added to the luminosity–SFR relation.
-- `--gen_both`: If set, generate both real and redshift space data.
-- `--redshift_min`, --redshift_max: Minimum and maximum redshift range for the mock data.
-- `--logm_min`: Minimum log halo mass for selecting galaxies.
-- `--threshold`: Minimum SFR threshold for emission line generation.
-- `--gen_catalog`: If set, generate a galaxy catalog with SFR greater than --catalog_threshold.
-- `--catalog_threshold`: SFR threshold for inclusion in the catalog.
 - `--mass_correction_factor`: Multiplier applied to halo mass before galaxy generation (default: 1.0). Useful if calibration is needed.
 
 

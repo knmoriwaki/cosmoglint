@@ -28,6 +28,7 @@ def create_line_intensity_map(
         angular_resolution,
         line_list,
         intensity_unit = "Jy/sr",
+        sigma = 0.2,
         args = None
     ):
 
@@ -98,7 +99,7 @@ def create_line_intensity_map(
                 z_valid = z_real[valid_mask]
                 log_sfr_valid = log_sfr[valid_mask]
 
-                log_lumi = calc_line_luminosity(args, z_valid, log_sfr_valid, line_name)
+                log_lumi = calc_line_luminosity(args, z_valid, log_sfr_valid, line_name, sigma=sigma)
                 log_lumi_dis = z_to_log_lumi_dis(z_valid, cosmo) # [cm]
 
                 flux = 10 ** ( log_lumi - 2 * log_lumi_dis ) / ( 4. * np.pi ) # [erg/s/cm2]

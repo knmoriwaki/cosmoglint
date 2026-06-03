@@ -19,7 +19,6 @@ cosmo = FlatLambdaCDM(H0=67.74, Om0=0.3089)
 from cosmoglint.utils.io_utils import save_hdf5_intensity_data, load_global_params
 from cosmoglint.utils import normalize, namespace_to_dict
 
-
 cspeed = 3e10 # [cm/s]
 micron = 1e-4 # [cm]
 
@@ -32,7 +31,9 @@ def parse_args():
 
     ### I/O parameters
     parser.add_argument("--input_fname", type=str, default="group.txt", help="Input filename")
-    parser.add_argument("--output_fname", type=str, default="test.h5", help="Output filename")
+    parser.add_argument("--output_fname", type=str, default=None, help="Output filename")
+    parser.add_argument("--output_catalog_fname", type=str, default=None, help="Output catalog filename")
+
     parser.add_argument("--global_param_file", type=str, default=None, help="File containing global parameters")
     parser.add_argument("--global_param_id", type=int, default=0, help="Row ID in the global parameter file")
 
@@ -49,7 +50,6 @@ def parse_args():
     parser.add_argument("--logm_min", type=float, default=11.0, help="Minimum log mass [Msun] to be used")
     parser.add_argument("--threshold", type=float, default=1e-3, help="Galaxies with SFR > threshold [Msun/yr] will be used")
 
-    parser.add_argument("--gen_catalog", action="store_true", default=False, help="Generate a catalog of galaxies instead of a data cube")
     parser.add_argument("--catalog_threshold", type=float, default=10, help="Threshold for SFR in the catalog in [Msun/yr]")
 
     parser.add_argument("--mass_correction_factor", type=float, default=1.0, help="Mass correction factor; the halo mass is multiplied by this factor before generating galaxies.")
@@ -80,6 +80,9 @@ def my_save_catalog_data(pos_list, value, args, output_fname):
     print(f"# Catalog saved to {output_fname}")
 
 def create_data(args):
+    if (args.output_fname is None) and (args.output_catalog_fname is None):
+        raise ValueError("Please set at least one of the output_fname or output_catalog_fname.")
+    
     import astropy.units as u
 
     torch.manual_seed(args.seed)
@@ -96,29 +99,29 @@ def create_data(args):
     ### Load data
     print(f"# Load {args.input_fname}")
 
+    hlittle = cosmo.H(0).to(u.km/u.s/u.Mpc).value / 100.0 
+
     if args.gen_both:
         args.redshift_space = True
 
-    if "pinocchio" in args.input_fname:
+    if args.input_fname.endswith(".hdf5") or args.input_fname.endswith(".h5"):
+        with h5py.File(args.input_fname, "r") as f:
+            redshift = f["Header"].attrs["Redshift"]
+            mass = f["Group/GroupMass"][:] # [1e10 Msun/h]
+            pos = f["Group/GroupPos"][:] # [kpc/h]
+            vel = f["Group/GroupVel"][:] # [km/s]
+
+    elif "pinocchio" in args.input_fname:
         match = re.search(r'pinocchio\.([0-9]+\.[0-9]+)', args.input_fname)
         redshift = float(match.group(1))
             
         import ReadPinocchio5 as rp
         mycat = rp.catalog(args.input_fname)
         
-        hlittle = cosmo.H(0).to(u.km/u.s/u.Mpc).value / 100.0 
-
-        mass = mycat.data["Mass"] / hlittle # [Msun]
+        mass = mycat.data["Mass"] / 1e10 # [1e10 Msun/h]
         pos = mycat.data["pos"]
         vel = mycat.data["vel"]
     
-    elif args.input_fname.endswith(".hdf5") or args.input_fname.endswith(".h5"):
-        with h5py.File(args.input_fname, "r") as f:
-            redshift = f["Header"].attrs["Redshift"]
-            mass = f["Group/GroupMass"][:] # [1e10 Msun]
-            pos = f["Group/GroupPos"][:] # [kpc/h]
-            vel = f["Group/GroupVel"][:] # [km/s]
-
     else:
         with open(args.input_fname, "r") as f:
             first_line = f.readline().strip()
@@ -127,7 +130,7 @@ def create_data(args):
         data = np.loadtxt(args.input_fname)
         # Input data: logm, x, y, z, vx, vy, vz, value
 
-        mass = 10 ** data[:, 0]
+        mass = 10 ** data[:, 0] / 1e10 * hlittle
         pos = data[:, 1:4]
         vel = data[:, 4:7]
 
@@ -152,7 +155,7 @@ def create_data(args):
 
     print(f"# Redshift: {redshift}")
     import astropy.units as u
-    H = cosmo.H(redshift).to(u.km/u.s/u.Mpc).value #[km/s/Mpc]
+    H = cosmo.H(redshift).to(u.km/u.s/u.kpc).value #[km/s/kpc]
     hlittle = cosmo.H(0).to(u.km/u.s/u.Mpc).value / 100.0 
     scale_factor = 1 / (1 + redshift)
 
@@ -173,16 +176,7 @@ def create_data(args):
         else:
             pos_list = [pos]
 
-        if args.gen_catalog:
-            pos_valid = []
-            for p in pos_list:
-                valid_mask = value > args.catalog_threshold
-                pos_valid = p[valid_mask]
-                value_valid = value[valid_mask]
-
-            my_save_catalog_data(pos_valid, value_valid, args, ["SubhaloSFR"], args.output_fname)
-
-        else:        
+        if args.output_fname is not None:      
             intensities = []
             for p in pos_list:
                 intensity = np.zeros((args.npix, args.npix, args.npix_z))
@@ -202,11 +196,21 @@ def create_data(args):
             keys = ["intensity", "intensity_rsd"]
             save_hdf5_intensity_data(intensities, args, keys, args.output_fname)
 
+        if args.output_catalog_fname is not None:
+            pos_valid = []
+            for p in pos_list:
+                valid_mask = value > args.catalog_threshold
+                pos_valid = p[valid_mask]
+                value_valid = value[valid_mask]
+
+            my_save_catalog_data(pos_valid, value_valid, args, ["SubhaloSFR"], args.output_catalog_fname)
+
+
     else:
+        ### Load global parameters
         with open("{}/args.json".format(args.model_dir), "r") as f:
             opt = json.load(f, object_hook=lambda d: argparse.Namespace(**d))
             
-        ### Load global parameters
         if args.global_param_file is not None:
             global_params = load_global_params(args.global_param_file, opt.global_features)[args.global_param_id] 
         else:
@@ -276,16 +280,8 @@ def create_data(args):
             pos_list = [pos_galaxies]
 
         ### Save
-        if args.gen_catalog:
-            print("# Generate catalog of galaxies")
-            pos_valid = []
-            for pos in pos_list:
-                valid_mask = sfr > args.catalog_threshold
-                pos_valid.append(pos[valid_mask])
-                sfr_valid = sfr[valid_mask]
-            my_save_catalog_data(pos_valid, sfr_valid, args, opt.output_features, args.output_fname)
 
-        else:
+        if args.output_fname is not None:
             print("# Assign galaxies to pixels")
             def make_intensity_map(pos, flux):
                 ix_galaxies = (pos / dx_pix).astype(int) # (num_galaxies_valid, 3)    
@@ -305,6 +301,16 @@ def create_data(args):
 
             keys = ["intensity", "intensity_rsd"]
             save_hdf5_intensity_data(intensities, args, keys, args.output_fname)
+        
+        if args.output_catalog_fname is not None:
+            print("# Generate catalog of galaxies")
+            pos_valid = []
+            for pos in pos_list:
+                valid_mask = sfr > args.catalog_threshold
+                pos_valid.append(pos[valid_mask])
+                sfr_valid = sfr[valid_mask]
+            my_save_catalog_data(pos_valid, sfr_valid, args, opt.output_features, args.output_catalog_fname)
+
 
 
 if __name__ == "__main__":

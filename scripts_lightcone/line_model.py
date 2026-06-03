@@ -36,7 +36,7 @@ line_dict = {
 FIR_SFR =  2.22e43
 Lsun = 3.828e33  # erg/s
 
-def calc_line_luminosity(args, z, log_sfr, line_name):
+def calc_line_luminosity(z, log_sfr, line_name, sigma=0.2):
     
     #ssfr = 10 ** (log_sfr - log_mstar)
     logL_FIR = log_sfr + np.log10( FIR_SFR / Lsun ) # [Lsun]: See eq. 23 of Fonseca+2017
@@ -99,6 +99,6 @@ def calc_line_luminosity(args, z, log_sfr, line_name):
     ### Add scatter
     r1 = np.random.rand(len(log_sfr))
     r2 = np.random.rand(len(log_sfr))
-    log_lumi += args.sigma * np.sqrt( -2.0 * np.log(r1) ) * np.sin( 2.0 * np.pi * r2 )
+    log_lumi += sigma * np.sqrt( -2.0 * np.log(r1) ) * np.sin( 2.0 * np.pi * r2 )
 
     return log_lumi

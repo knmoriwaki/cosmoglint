@@ -17,7 +17,7 @@ from astropy.cosmology import FlatLambdaCDM
 cosmo = FlatLambdaCDM(H0=67.74, Om0=0.3089)
 import astropy.units as u
 
-from cosmoglint.utils import normalize, namespace_to_dict,get_index_list
+from cosmoglint.utils import normalize, namespace_to_dict, get_index_list
 from cosmoglint.utils.io_utils import load_mesh_data, save_hdf5_intensity_data, save_hdf5_catalog_data
 from cosmoglint.sampling import sample_galaxies_from_mesh_continuous
 from cosmoglint.model.transformer import transformer_model
@@ -36,8 +36,8 @@ def parse_args():
 
     ### I/O parameters
     parser.add_argument("--input_fname", type=str, default=None, help="Input filename")
-    parser.add_argument("--output_fname", type=str, default="none", help="Output filename")
-    parser.add_argument("--output_catalog_fname", type=str, default="none", help="Output filename")
+    parser.add_argument("--output_fname", type=str, default=None, help="Output filename")
+    parser.add_argument("--output_catalog_fname", type=str, default=None, help="Output catalog filename")
 
     parser.add_argument("--global_param_file", type=str, default=None, help="File containing global parameters")
     parser.add_argument("--global_param_id", type=int, default=0, help="Row ID in the global parameter file")
@@ -158,7 +158,7 @@ def create_data(args):
     val = generated[:,val_idx].copy() # (N, )
 
     ### Save galaxy catalog
-    if args.output_catalog_fname != "none":
+    if args.output_catalog_fname is not None:
         print("# Generate catalog of galaxies")
         
         catalog_threshold = max(args.threshold, args.catalog_threshold)
@@ -168,7 +168,7 @@ def create_data(args):
         save_hdf5_catalog_data(generated_valid, args, opt.output_features, args.output_catalog_fname)
         
     ### Save intensity map
-    if args.output_fname != "none":
+    if args.output_fname is not None:
         print("# Assign galaxies to pixels")
         pos = generated[:,pos_idx].copy() # (N, 3)
         pos_real = pos.copy()

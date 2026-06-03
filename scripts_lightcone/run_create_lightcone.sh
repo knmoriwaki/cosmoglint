@@ -12,7 +12,7 @@ zmax=6.0
 dz=0.001
 
 
-output_dir=../dataset/generated_data_lightcone
+output_dir=../data/halo/generated_data_lightcone
 mkdir -p $output_dir
 
 model_dir=../scripts/runs/output_transformer
@@ -21,9 +21,9 @@ irun=1
 irun_id=$(printf "%05d" $irun)
 
 if [ $side_length -gt 10000 ]; then
-    input_fname=../dataset/Pinocchio/my_lightcone/output_large/pinocchio.r${irun_id}.plc.out
+    input_fname=../data/halo/Pinocchio/my_lightcone/output_large/pinocchio.r${irun_id}.plc.out
 else
-    input_fname=../dataset/Pinocchio/my_lightcone/output/pinocchio.r${irun_id}.plc.out
+    input_fname=../data/halo/Pinocchio/my_lightcone/output/pinocchio.r${irun_id}.plc.out
 fi
 
 mass_correction_factor=0.9

@@ -44,7 +44,7 @@ def load_halo_data(
             mask = mask & ( source[:,i] > 0 )
             
         if exclude_ratio > 0:
-            boxsize = f.attrs["BoxSize"] # [kpc/h]
+            boxsize = f["Header"].attrs["BoxSize"] # [kpc/h]
             halo_pos = f["Group/GroupPos"][:]  # [kpc/h]
             mask_exclude = (halo_pos[:,0] > boxsize * (1.-exclude_ratio)) \
                         & (halo_pos[:,1] > boxsize * (1.-exclude_ratio)) \

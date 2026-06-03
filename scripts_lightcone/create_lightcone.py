@@ -19,7 +19,6 @@ from astropy.cosmology import FlatLambdaCDM
 cosmo = FlatLambdaCDM(H0=67.74, Om0=0.3089)
 import astropy.units as u
 
-
 cspeed = 3e10  # [cm/s]
 
 def parse_args():
@@ -29,9 +28,11 @@ def parse_args():
     parser.add_argument("--seed", type=int, default=12345)
     parser.add_argument("--gpu_id", type=int, default=0, help="GPU ID to use")
 
-    ### I/O parameters
+    ### I/O files
     parser.add_argument("--input_fname", type=str, default="./Pinocchio/output/pinocchio.r01000.plc.out")
-    parser.add_argument("--output_fname", type=str, default="test.h5")
+    parser.add_argument("--output_fname", type=str, default=None, help="Output filename")
+    parser.add_argument("--output_catalog_fname", type=str, default=None, help="Output catalog filename")
+    
     parser.add_argument("--global_param_file", type=str, default=None, help="File containing global parameters")
     parser.add_argument("--global_param_id", type=int, default=0, help="Row ID in the global parameter file")
 
@@ -41,23 +42,26 @@ def parse_args():
 
     parser.add_argument("--redshift_min", type=float, default=0.0, help="Minimum redshift")
     parser.add_argument("--redshift_max", type=float, default=6.0, help="Maximum redshift")
-    parser.add_argument("--dz", type=float, default=0.01, help="Redshift bin size. Not used if gen_catalog is set.")
-    parser.add_argument("--use_logz", action="store_true", default=False, help="Use dlogz instead of dz for redshift binning")
-
     parser.add_argument("--logm_min", type=float, default=11.0, help="Minimum log mass")
     parser.add_argument("--threshold", type=float, default=1e-3, help="Threshold for SFR")
-
     parser.add_argument("--mass_correction_factor", type=float, default=1.0, help="Mass correction factor")
 
-    parser.add_argument("--gen_catalog", action="store_true", default=False, help="Generate galaxy catalog with SFR > catalog_threshold")
-    parser.add_argument("--catalog_threshold", type=float, default=10, help="Threshold for SFR in the catalog")
 
     parser.add_argument("--side_length", type=float, default=300.0, help="side length in arcsec")
-    parser.add_argument("--angular_resolution", type=float, default=30, help="angular resolution in arcsec. Not used if gen_catalog is set.")
 
+    ### Output parameters (catalog)
+    parser.add_argument("--catalog_threshold", type=float, default=10, help="Threshold for SFR in the catalog")
+
+    ### Output parameters (intensity map)
+    parser.add_argument("--line_list", type=str, nargs="+",default=["[CII]"], help="list of line names")
+
+    parser.add_argument("--angular_resolution", type=float, default=30, help="angular resolution in arcsec.")
+    parser.add_argument("--fmin", type=float, default=10.0, help="minimum frequency in GHz")
+    parser.add_argument("--fmax", type=float, default=100.0, help="maximum frequency in GHz")
+    parser.add_argument("--R", type=float, default=100, help="spectral resolution R")
     parser.add_argument("--intensity_unit", type=str, default="Jy/sr", help="Intensity unit to use. Default is Jy/sr.")
+    parser.add_argument("--sigma", type=float, default=0.2, help="Log-normal scatter [dex] added to the luminosity–SFR relation.")
 
-    
     ### Generative model parameters
     parser.add_argument("--model_dir", type=str, default=None, help="The directory of the model.")
     parser.add_argument("--model_config_file", type=str, default="model_config.json", help="The configuration file for the model")
@@ -164,9 +168,7 @@ def create_lightcone(args):
 
     print("# redshift: {:.4f} - {:.4f} [GHz]".format(args.redshift_min, args.redshift_max))
     print("# area : {:.4f} arcsec x {:.4f} arcsec".format(args.side_length, args.side_length))
-    if not args.gen_catalog:
-        print("# dz: {:.4f}".format(args.dz))
-        print("# angular resolution : {:.4f} arcsec".format(args.angular_resolution))
+    print("# angular resolution : {:.4f} arcsec".format(args.angular_resolution))
 
     if args.gen_both:
         NotImplementedError("Generating both real and redshift space data is not implemented yet.")
@@ -252,7 +254,31 @@ def create_lightcone(args):
 
     print(f"# Elapsed time: {time.time() - time_start} sec")
 
-    if args.gen_catalog:
+    if args.output_fname is not None:
+        
+        ### Generate line intensity map ###
+
+        from line_intensity_map import create_line_intensity_map
+        i_sfr = opt.output_features.index("SubhaloSFR")
+        log_sfr = np.log10( generated_all[:,i_sfr] )
+        create_line_intensity_map(
+            pos_x=pos_galaxies[:,0],
+            pos_y=pos_galaxies[:,1],
+            z_obs=pos_galaxies[:,2],
+            z_real=redshift_central_all,
+            log_sfr=log_sfr,
+            fmin=args.fmin,
+            fmax=args.fmax,
+            R=args.R,
+            side_length=args.side_length,
+            angular_resolution=args.angular_resolution,
+            line_list=args.line_list,
+            intensity_unit=args.intensity_unit,
+            sigma=args.sigma,
+            args=args
+        )
+
+    if args.output_catalog_fname is not None:
 
         ### Generate catalog ###
 
@@ -275,29 +301,6 @@ def create_lightcone(args):
                 f.create_dataset(key, data=generated_all[:,iparam], compression="gzip")
         
         print("Galaxy catalog saved to {}".format(args.output_fname))
-
-    else:
-        
-        ### Generate line intensity map ###
-
-        from line_intensity_map import create_line_intensity_map
-        i_sfr = opt.output_features.index("SubhaloSFR")
-        log_sfr = np.log10( generated_all[:,i_sfr] )
-        create_line_intensity_map(
-            pos_x=pos_galaxies[:,0],
-            pos_y=pos_galaxies[:,1],
-            z_obs=pos_galaxies[:,2],
-            z_real=redshift_central_all,
-            log_sfr=log_sfr,
-            fmin=args.fmin,
-            fmax=args.fmax,
-            R=args.R,
-            side_length=args.side_length,
-            angular_resolution=args.angular_resolution,
-            line_list=args.line_list,
-            intensity_unit=args.intensity_unit,
-            args=args
-        )
 
 
 def load_lightcone_data(input_fname, cosmo):
