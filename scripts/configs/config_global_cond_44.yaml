@@ -1,6 +1,6 @@
 # data
 data_path:
-  - ../data/halo/CAMELS/IllustrisTNG/LH/LH_*/my_groups_44.hdf5
+  - ../data/halo/CAMELS/IllustrisTNG/LH/LH_*/my_groups_044.hdf5
 global_param_file: ../data/halo/CAMELS/IllustrisTNG/CosmoAstroSeed_IllustrisTNG_L25n256_LH.txt
 indices: 0-899
 norm_param_file: ../data/halo/param_files/norm_params_CAMELS.json

@@ -34,7 +34,7 @@ def load_halo_data(
         # Load input features
         source_list = []
         for feature in input_features:
-            x = load_values(f, feature, norm_param_dict=norm_param_dict)
+            x = load_values(f, f"Group/{feature}", norm_param_dict=norm_param_dict)
             source_list.append(x)
 
         source = np.stack(source_list, axis=1)  # (N, num_features_in)
@@ -45,7 +45,7 @@ def load_halo_data(
             
         if exclude_ratio > 0:
             boxsize = f.attrs["BoxSize"] # [kpc/h]
-            halo_pos = f["GroupPos"][:]  # [kpc/h]
+            halo_pos = f["Group/GroupPos"][:]  # [kpc/h]
             mask_exclude = (halo_pos[:,0] > boxsize * (1.-exclude_ratio)) \
                         & (halo_pos[:,1] > boxsize * (1.-exclude_ratio)) \
                         & (halo_pos[:,2] > boxsize * (1.-exclude_ratio))
@@ -65,12 +65,12 @@ def load_halo_data(
         # Load output features
         target_list = []
         for feature in output_features:
-            y = load_values(f, feature, norm_param_dict=norm_param_dict)
+            y = load_values(f, f"Subhalo/{feature}", norm_param_dict=norm_param_dict)
             target_list.append(y)
 
         target = np.stack(target_list, axis=1)  # (N, num_features_out)
 
-        num_subgroups = f["GroupNsubs"][:]
+        num_subgroups = f["Group/GroupNsubs"][:]
 
         offset = 0
         y_list = []

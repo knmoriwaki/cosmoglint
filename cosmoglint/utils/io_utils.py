@@ -78,6 +78,9 @@ def normalize(x, key, norm_param_dict, inverse=False, convert=True):
         key, idx = key.split(":", 1)
     else:
         key, idx = key, 0
+
+    if "/" in key:
+        key = key.split("/")[-1]
         
     if norm_param_dict is not None:
         xmin = norm_param_dict[key]["min"]
@@ -179,7 +182,7 @@ def load_galaxy_data(file_path, features, norm_param_dict):
     with h5py.File(file_path, "r") as f:
         gal_data_list = []
         for key, idxs in key_to_indices.items():
-            x = load_values(f, key, norm_param_dict=norm_param_dict)
+            x = load_values(f, f"Subhalo/{key}", norm_param_dict=norm_param_dict)
             if x.ndim == 1:
                 x = x[:, None]
             x = x[:, idxs]

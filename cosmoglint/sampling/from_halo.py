@@ -57,7 +57,7 @@ def sample_galaxies(args, x_in, global_params=None, verbose=True):
     model.eval()
     
     if verbose:
-        print("opt: ", opt)
+        #print("opt: ", opt)
         print(model)
 
     ### Format input data
@@ -67,10 +67,9 @@ def sample_galaxies(args, x_in, global_params=None, verbose=True):
     x_in = torch.from_numpy(x_in).float().to(device)
 
     if global_params is not None:
-        global_params = global_params[opt.global_features].to_numpy(dtype=np.float32)
         for i, key in enumerate(opt.global_features):
-            global_params[...,i] = normalize(global_params[...,i], key, opt.norm_param_dict)
-        global_params = torch.tensor(np.array(global_params), dtype=torch.float32).to(device)
+            global_params[i] = normalize(global_params[i], key, opt.norm_param_dict)
+        global_params = torch.from_numpy(global_params).float().to(device)
 
     if args.max_sfr_file is None:
         print("# No max SFR file provided, using default max IDs")
@@ -83,6 +82,7 @@ def sample_galaxies(args, x_in, global_params=None, verbose=True):
     ### Generate galaxies
     num_batch = (len(x_in) + opt.batch_size - 1) // opt.batch_size
     stop_criterion = normalize(args.threshold, opt.output_features[0], opt.norm_param_dict) # stop criterion for SFR
+    
     generated = []
     for batch_idx in tqdm(range(num_batch)):
         start = batch_idx * opt.batch_size 
@@ -97,10 +97,9 @@ def sample_galaxies(args, x_in, global_params=None, verbose=True):
 
     if opt.use_flat_representation:
         generated = generated.squeeze(-1).reshape(len(generated), -1, opt.num_features_in) # (num_halos, max_length, num_features) 
-        mask = mask.reshape(len(mask), -1, opt.num_features_in)
-
+      
     mask = create_mask(generated[:,:,0], stop_criterion) # (num_halos, seq_length)
-
+    
     # De-normalize
     for i, key in enumerate(opt.output_features):
         generated[...,i] = normalize(generated[...,i], key, opt.norm_param_dict, inverse=True)
@@ -149,9 +148,8 @@ def sample_galaxies_TransNF(args, x_in, global_params=None, verbose=True):
     x_in = torch.from_numpy(x_in).float().to(device)
 
     if global_params is not None:
-        global_params = np.array([global_params[name] for name in opt.global_features], dtype=np.float32)
         for i, key in enumerate(opt.global_features):
-            global_params[...,i] = normalize(global_params[...,i], key, opt.norm_param_dict)
+            global_params[i] = normalize(global_params[i], key, opt.norm_param_dict)
         global_params = torch.from_numpy(global_params).float().to(device)
     
     num_batch = (len(x_in) + opt.batch_size - 1) // opt.batch_size
