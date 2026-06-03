@@ -1,8 +1,8 @@
 #!/bin/bash
 
-gpu_id=0
+gpu_id=1
 
-for snapshot_number in 44 
+for snapshot_number in 44
 do
     config_file=./configs/config_global_cond_${snapshot_number}.yaml
 
@@ -11,7 +11,7 @@ do
     do
         for num_epochs in 40 
         do
-            output_dir=./runs/output_transformer/$transformer_${snapshot_number}_ep${num_epochs}_bs${batch_size}_w${sampler_weight_min}
+            output_dir=./runs/output_transformer/transformer_global_cond_${snapshot_number}_ep${num_epochs}_bs${batch_size}_w${sampler_weight_min}
             
             mkdir -p $output_dir/source
             cp -r train_transformer.py $config_file ../cosmoglint/model/transformer.py ../cosmoglint/utils $output_dir/source/.

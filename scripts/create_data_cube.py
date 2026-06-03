@@ -16,7 +16,9 @@ import torch
 from astropy.cosmology import FlatLambdaCDM
 cosmo = FlatLambdaCDM(H0=67.74, Om0=0.3089)
 
-from cosmoglint.utils.io_utils import save_hdf5_intensity_data
+from cosmoglint.utils.io_utils import save_hdf5_intensity_data, load_global_params
+from cosmoglint.utils import normalize, namespace_to_dict
+
 
 cspeed = 3e10 # [cm/s]
 micron = 1e-4 # [cm]
@@ -34,8 +36,8 @@ def parse_args():
     parser.add_argument("--global_param_file", type=str, default=None, help="File containing global parameters")
     parser.add_argument("--global_param_id", type=int, default=0, help="Row ID in the global parameter file")
 
-    parser.add_argument("--boxsize", type=float, default=100.0, help="Box size of data [Mpc/h]")
-    parser.add_argument("--boxsize_to_use", type=float, default=None, help="Box size to be used [Mpc/h]")
+    parser.add_argument("--boxsize", type=float, default=100.0, help="Box size of data")
+    parser.add_argument("--boxsize_to_use", type=float, default=None, help="Box size to be used")
 
     ### Output format parameters
     parser.add_argument("--npix", type=int, default=100, help="Number of pixels in x and y direction")
@@ -112,10 +114,10 @@ def create_data(args):
     
     elif args.input_fname.endswith(".hdf5") or args.input_fname.endswith(".h5"):
         with h5py.File(args.input_fname, "r") as f:
-            redshift = f.attrs["Redshift"]
-            mass = f["GroupMass"][:] # [Msun]
-            pos = f["GroupPos"][:] # [Mpc/h]
-            vel = f["GroupVel"][:]
+            redshift = f["Header"].attrs["Redshift"]
+            mass = f["Group/GroupMass"][:] # [1e10 Msun]
+            pos = f["Group/GroupPos"][:] # [kpc/h]
+            vel = f["Group/GroupVel"][:] # [km/s]
 
     else:
         with open(args.input_fname, "r") as f:
@@ -131,18 +133,11 @@ def create_data(args):
 
     mass *= args.mass_correction_factor
 
-    ### Load global parameters
-    if args.global_param_file is not None:
-        global_params_all = np.genfromtxt(args.global_param_file, names=True, dtype=None, encoding="utf-8")
-        global_params = global_params_all[args.global_param_id]
-    else:
-        global_params = None
-
     ### Mask out small halos
     print("# Minimum log mass in catalog [Msun]: {:.5f}".format(np.min(np.log10(mass))))
     print("# Maximum log mass in catalog [Msun]: {:.5f}".format(np.max(np.log10(mass))))
     print("# Use halos with log mass [Msun] > {}".format(args.logm_min))
-    mask = (np.log10(mass) > args.logm_min)
+    mask = (np.log10(mass) + 10 > args.logm_min)
     
     if args.boxsize_to_use < args.boxsize:
         print("# Use a volume at the last corner -- new boxsize: {:.3f}".format(args.boxsize_to_use))
@@ -185,7 +180,7 @@ def create_data(args):
                 pos_valid = p[valid_mask]
                 value_valid = value[valid_mask]
 
-            my_save_catalog_data(pos_valid, value_valid, args, args.output_fname)
+            my_save_catalog_data(pos_valid, value_valid, args, ["SubhaloSFR"], args.output_fname)
 
         else:        
             intensities = []
@@ -204,9 +199,19 @@ def create_data(args):
 
                 intensities.append(intensity)
 
-            save_hdf5_intensity_data(intensities, args, args.output_fname)
+            keys = ["intensity", "intensity_rsd"]
+            save_hdf5_intensity_data(intensities, args, keys, args.output_fname)
 
     else:
+        with open("{}/args.json".format(args.model_dir), "r") as f:
+            opt = json.load(f, object_hook=lambda d: argparse.Namespace(**d))
+            
+        ### Load global parameters
+        if args.global_param_file is not None:
+            global_params = load_global_params(args.global_param_file, opt.global_features)[args.global_param_id] 
+        else:
+            global_params = None
+
         if "transformer_nf" in args.model_dir:
             from cosmoglint.sampling import sample_galaxies_TransNF
             generated, mask = sample_galaxies_TransNF(args, cond, global_params=global_params)
@@ -254,7 +259,7 @@ def create_data(args):
 
         ### Add redshift-space distortion
         if args.redshift_space:
-            H = cosmo.H(redshift).to(u.km/u.s/u.Mpc).value #[km/s/Mpc]
+            H = cosmo.H(redshift).to(u.km/u.s/u.kpc).value #[km/s/kpc]
             hlittle = cosmo.H(0).to(u.km/u.s/u.Mpc).value / 100.0 
             scale_factor = 1 / (1 + redshift)
 
@@ -278,7 +283,7 @@ def create_data(args):
                 valid_mask = sfr > args.catalog_threshold
                 pos_valid.append(pos[valid_mask])
                 sfr_valid = sfr[valid_mask]
-            my_save_catalog_data(pos_valid, sfr_valid, args, args.output_fname)
+            my_save_catalog_data(pos_valid, sfr_valid, args, opt.output_features, args.output_fname)
 
         else:
             print("# Assign galaxies to pixels")
@@ -298,7 +303,8 @@ def create_data(args):
                 intensity = make_intensity_map(pos, sfr)
                 intensities.append(intensity)
 
-            save_hdf5_intensity_data(intensities, args, args.output_fname)
+            keys = ["intensity", "intensity_rsd"]
+            save_hdf5_intensity_data(intensities, args, keys, args.output_fname)
 
 
 if __name__ == "__main__":
