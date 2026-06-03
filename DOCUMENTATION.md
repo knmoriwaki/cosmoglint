@@ -1,6 +1,5 @@
 # Documentation for CosmoGLINT
 
-
 ## Overview
 
 This repository includes:
@@ -9,21 +8,17 @@ This repository includes:
 - Scripts for training and mock catalog generation.
 - Example notebooks for result visualization.
 
-Models trained with TNG300-1 at z = 0.5 - 6 and generated data are available at [Google Drive](https://drive.google.com/drive/folders/1IFje9tNRf4Dr3NufqzlDdGMFTEDpsm35?usp=share_link).
-
+~~Models trained with TNG300-1 at z = 0.5 - 6 and generated data are available at [Google Drive](https://drive.google.com/drive/folders/1IFje9tNRf4Dr3NufqzlDdGMFTEDpsm35?usp=share_link).~~
+Pre-trained model for the new version will be provided soon.
 
 ---
 
-## Model
-
 ## Installation
 
-Python>=3.9 is required.
-
-This package requires PyTorch.
+This package requires PyTorch>=3.9. 
 Please install PyTorch first following https://pytorch.org
 
-Install package and from local clone:
+Install package:
 
 ```bash
 git clone https://github.com/knmoriwaki/cosmoglint.git
@@ -43,7 +38,7 @@ If you only need the `cosmoglint` package (e.g., to import it in your own code),
 pip install git+https://github.com/knmoriwaki/cosmoglint.git
 ```
 
----
+## Model Usage
 
 Load model:
 ```python
@@ -119,29 +114,45 @@ cd scripts
 python train_transformer.py --config_file [config_file] 
 ```
 
-The config file is a YAML file that specifies the details of the dataset and the model.
+The config file is a YAML file that specifies the details of the dataset and the model. The example config files are located in `scripts/config`.
 
-Model-related fields (config file):
+#### Model-related fields (config file):
 - `model_name`: Name of the model architecture to use (default: "transformer1"). 
 - `d_model`: Dimensionality of the transformer’s internal feature representation (default: 128).
 - `num_layers`: Number of transformer encoder layers (default: 4).
 - `num_heads`: Number of attention heads in each multi-head attention layer (default: 8).
 - `num_features_out`: Total number of output bins across all predicted parameters. Typically C × d, where C is the number of output features and d is the number of bins per parameter.
 
-Data-related fields (config file):
-- `data_path`: Path(s) to the training data. Data is an hdf5 file that contains properties of halos and galaxies. In addition to those for input and output features, the number of galaxies in each halo (`GroupNsubs`) should be provided. Multiple files can be passed.
+#### Data-related fields (config file):
+- `data_path`: Path(s) to the training data. Data is an hdf5 file that contains properties of halos and galaxies. In addition to those for input and output features, the number of galaxies in each halo (`Group/GroupNsubs`) should be provided. Multiple files can be passed.
 - `data_path_mesh`: Path(s) to the mesh data. Required when using "mesh_conditioned_transformer" or "mesh_sequence_conditioned_transformer".
 - `global_param_file`: Path to the global parameters file(s). The header should include `global_features`. (default: None)
 - `indices`: If the data path contains `*` (e.g., `.../run_*`), it will be expanded by replacing `*` with integers in the specified range (e.g., `0–999`).  
-- `norm_param_file`: Path to the json file that specifies the normalization settings. Each key (e.g., `HaloMass`) maps to a dictionary with `min` / `max` and `norm`. If `norm` is `"log"` or `"log_with_sign"`, the `min` / `max` normalization is applied after the log conversion.
+- `norm_param_file`: Path to the json file that specifies the normalization settings. Each key (e.g., `GroupMass`) maps to a dictionary with `min` / `max` and `norm`. If `norm` is `"log"` or `"log_with_sign"`, the `min` / `max` normalization is applied after the log conversion.
+Example `norm_param_file`:
+
+  ```json
+  {
+    "GroupMass": {
+      "min": 1.0,
+      "max": 5.0,
+      "norm": "log"
+    },
+    "SubhaloSFR": {
+      "min": -3.0,
+      "max": 3.0,
+      "norm": "log"
+    }
+  }
+  ```
+
 - `input_features`: List of the input properties (default: `["GroupMass"]`)
 - `output_features`: List of the output properties (default: `["SubhaloSFR", "SubhaloDist", "SubhaloVrad", "SubhaloVtan"]`)
 - `global_features`: List of global properties. If not None, `global_param_file` should be provided (default: None)
 - `max_length`: Maximum number of galaxies (sequence length) per halo (default: 30).
-- `use_flat_representation`: If true, use flattened point features (B, N * M). If false, keep (B, N, M). 
+- `use_flat_representation`: If true, use flattened point features (B, N * M). If false, keep (B, N, M). Set this to `true` when you want to model correlations among multiple parameters. (default: false)
 
-
-Command-line options:
+#### Command-line options:
 - `--gpu_id`: ID of the GPU to use (default: "0"). Accepts string values like "0", "1", etc.
 - `--seed`: Random seed for reproducibility (default: 12345).
 - `--show_pbar`: Show progress bar. Use `--no-show_pbar` to disable progress bar. (default: True)
