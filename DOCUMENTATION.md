@@ -111,12 +111,8 @@ generated, prob = model.generate(condition, seq=seq, prob_threshold=1e-5)
 
 ---
 
-## Scripts and notebook
 
-The scripts in `scripts` can be used for training and mock generation. Notebooks in `notebooks` can be used for visualization.
-
-
-### Training 
+## Training scripts
 
 Example:
 ```bash
@@ -126,14 +122,14 @@ python train_transformer.py --config_file [config_file]
 
 The config file is a YAML file that specifies the details of the dataset and the model. The example config files are located in `scripts/config`.
 
-#### Model-related fields (config file):
+### Model-related fields (config file):
 - `model_name`: Name of the model architecture to use (default: "transformer1"). 
 - `d_model`: Dimensionality of the transformer’s internal feature representation (default: 128).
 - `num_layers`: Number of transformer encoder layers (default: 4).
 - `num_heads`: Number of attention heads in each multi-head attention layer (default: 8).
 - `num_features_out`: Total number of output bins across all predicted parameters. Typically C × d, where C is the number of output features and d is the number of bins per parameter.
 
-#### Data-related fields (config file):
+### Data-related fields (config file):
 - `data_path`: Path(s) to the training data. Data is an hdf5 file that contains properties of halos and galaxies. In addition to those for input and output features, the number of galaxies in each halo (`Group/GroupNsubs`) should be provided. Multiple files can be passed.
 - `data_path_mesh`: Path(s) to the mesh data. Required when using "mesh_conditioned_transformer" or "mesh_sequence_conditioned_transformer".
 - `global_param_file`: Path to the global parameters file(s). The header should include `global_features`. (default: None)
@@ -161,7 +157,7 @@ Example `norm_param_file`:
 - `max_length`: Maximum number of galaxies (sequence length) per halo (default: 30).
 - `use_flat_representation`: If true, use flattened point features (B, N * M). If false, keep (B, N, M). Set this to `true` when you want to model correlations among multiple parameters. (default: false)
 
-#### Command-line options:
+### Command-line options:
 - `--gpu_id`: ID of the GPU to use (default: "0"). Accepts string values like "0", "1", etc.
 - `--seed`: Random seed for reproducibility (default: 12345).
 - `--show_pbar`: Show progress bar. Use `--no-show_pbar` to disable progress bar. (default: True)
@@ -177,7 +173,7 @@ Example `norm_param_file`:
 
 ---
 
-### Create data cube
+## Create scripts
 
 Example:
 ```bash
@@ -185,7 +181,7 @@ cd scripts
 python create_data_cube.py --input_fname [input_fname] --model_dir [model_dir] 
 ```
 
-Important options:
+### Important options:
 - `--input_fname`: Path to the halo catalog. The following file formats are supported:
   - HDF5 file in gadget format.
   - Text file that contains halo mass [Msun] in log scale (1st column), comving positions [Mpc/h] (2nd to 4th columns), and velocities [km/s] (5th to 8th columns)
@@ -195,15 +191,14 @@ Important options:
 
 - `--model_dir`: Path to a directory containing the trained model (`model.pth` and `args.json`). If not set, column 7 of the input file is used as intensity.
 - `--boxsize`: Size of the simulation box in comoving units [Mpc/h] (default: 100.0).
-- `--redshift_space`: If set, positions are converted to redshift space using halo velocities.
+- `--redshift_space`: If set, generate output in redshift space in addition to output in real space.
 - `--gen_both`: If set, generates both real-space and redshift-space data cubes.
 - `--npix`: Number of pixels in the x and y directions for the data cube (default: 100).
 - `--npix_z`: Number of pixels in the z direction (default: 90).
 
-Other options:
+### Other options:
 - `--gpu_id`: GPU ID to use (default: 0).
 - `--seed`: Random seed for reproducibility (default: 12345).
-- `--gen_catalog`: If set, outputs a galaxy catalog instead of a 3D data cube.
 - `--catalog_threshold`: Minimum star formation rate (SFR) [Msun/yr] for galaxies to be included in the catalog (default: 10).
 - `--logm_min`: Minimum log halo mass [Msun] to be included in the mock (default: 11.0).
 - `--threshold`: Only galaxies with SFR > threshold [Msun/yr] will be used in the mock (default: 1e-3).
@@ -213,7 +208,7 @@ Other options:
 
 ---
 
-### Create lightcone catalog or line intensity map
+## Lightcone creation scripts
 
 One can also create a mock lightcone data. This requires models trained on multiple redshift.
 
@@ -231,20 +226,23 @@ Example of `model_config_file`:
 }
 ```
 
-#### Important options:
+### Important options:
 - `--input_fname`: Path to the lightcone halo catalog. Pinocchio format is supported.
 - `--output_fname`: Name of the output file to write the generated intensity map to (default: None).
 - `--output_catalog fname`: Name of the output file to write the generated catalog to (default: None).
+
 - `--model_dir`: Path to a directory containing the trained models. 
 - `--model_config_file`: Path to a JSON file that contains the names of the trained models to be used for each redshift bin. The JSON file is a dictionary where each key is a stringified snapshot ID, and the value is a list containing the model directory relative to `model_dir` and the redshift.
-- `--redshift_space`: If set, generate output in redshift space.
+- `--redshift_space`: If set, generate output in redshift space in addition to output in real space.
 - `redshift_min`, `--redshift_max`: Redshift range for the lightcone.
 - `--side_length`: Angular size of the simulated map in arcsec (default: 300).
 
-#### Options for catalog
+### Options for catalog 
+The following options are required if `output_catalog_fname` is defined
 - `--catalog_threshold`: SFR threshold for inclusion in the catalog.
 
-#### Options for intensity map
+### Options for intensity map 
+The following options are required if `output_fname` is defined
 - `--line_list`: List of line names (default `["[CII]"]`)
 - `--angular_resolution`: Angular resolution in arcsec. (default: 30)
 - `--fmin`: Minimum frequency in GHz (default: 10)
@@ -252,11 +250,10 @@ Example of `model_config_file`:
 - `--intensity_unit`: Intensity unit to use. Available options: "Jy/sr", "erg/s/cm2/Hz/beam", "erg/s/cm2/sr" (default: "Jy/sr")
 - `--sigma`: Log-normal scatter [dex] added to the luminosity–SFR relation (default: 0.2)
 
-#### Other options:
+### Other options:
 - `--gpu_id`: GPU ID to use (default: 0).
 - `--seed`: Random seed for reproducibility (default: 12345).
 - `--param_dir`: Path to a directory containing the file of maximum normalized SFR for each mass bin (default: None).
-- `--gen_both`: If set, generate both real and redshift space data.
 - `--redshift_min`, `--redshift_max`: Minimum and maximum redshift range for the mock data.
 - `--logm_min`: Minimum log halo mass for selecting galaxies.
 - `--threshold`: Minimum SFR threshold for emission line generation.
@@ -279,17 +276,20 @@ Example of `model_config_file`:
 
 ## Citation
 
-If you use CosmoGLINT in your research, please cite [Moriwaki et al. 2025](https://arxiv.org/abs/2506.16843)
+If you use CosmoGLINT in your research, please cite [Moriwaki et al. 2026](https://arxiv.org/abs/2506.16843)
 
 ```
 @ARTICLE{CosmoGLINT,
   title = {CosmoGLINT: Cosmological Generative Model for Line Intensity Mapping with Transformer},
   author = {{Moriwaki}, Kana and {Jun}, Rui Lan and {Osato}, Ken and {Yoshida}, Naoki},
-  journal = {arXiv preprints},
-  year = 2025,
-  month = jun,
-  eid = {arXiv:2506.16843},
-  doi = {10.48550/arXiv.2506.16843},
+  journal = {Monthly Notices of the Royal Astronomical Society},
+  year = 2026,
+  month = jan,
+  volume = {545},
+  number = {3},
+  eid = {staf2124},
+  pages = {staf2124},
+  doi = {10.1093/mnras/staf2124},
   archivePrefix = {arXiv},
   eprint = {2506.16843},
   primaryClass = {astro-ph.CO}
