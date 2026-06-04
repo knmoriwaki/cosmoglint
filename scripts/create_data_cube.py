@@ -44,9 +44,8 @@ def parse_args():
     parser.add_argument("--npix", type=int, default=100, help="Number of pixels in x and y direction")
     parser.add_argument("--npix_z", type=int, default=90, help="Number of pixels in z direction")
 
-    parser.add_argument("--redshift_space", action="store_true", default=False, help="Use redshift space")
-    parser.add_argument("--gen_both", action="store_true", default=False, help="Generate both real and redshift space data")
-
+    parser.add_argument("--redshift_space", action="store_true", default=False, help="Create data in both real and redshift space")
+    
     parser.add_argument("--logm_min", type=float, default=11.0, help="Minimum log mass [Msun] to be used")
     parser.add_argument("--threshold", type=float, default=1e-3, help="Galaxies with SFR > threshold [Msun/yr] will be used")
 
@@ -101,15 +100,14 @@ def create_data(args):
 
     hlittle = cosmo.H(0).to(u.km/u.s/u.Mpc).value / 100.0 
 
-    if args.gen_both:
-        args.redshift_space = True
-
     if args.input_fname.endswith(".hdf5") or args.input_fname.endswith(".h5"):
         with h5py.File(args.input_fname, "r") as f:
             redshift = f["Header"].attrs["Redshift"]
             mass = f["Group/GroupMass"][:] # [1e10 Msun/h]
             pos = f["Group/GroupPos"][:] # [kpc/h]
-            vel = f["Group/GroupVel"][:] # [km/s]
+            print(args.redshift_space)
+            if args.redshift_space:
+                vel = f["Group/GroupVel"][:] # [km/s]
 
     elif "pinocchio" in args.input_fname:
         match = re.search(r'pinocchio\.([0-9]+\.[0-9]+)', args.input_fname)
@@ -120,7 +118,8 @@ def create_data(args):
         
         mass = mycat.data["Mass"] / 1e10 # [1e10 Msun/h]
         pos = mycat.data["pos"]
-        vel = mycat.data["vel"]
+        if args.redshift_space:
+            vel = mycat.data["vel"]
     
     else:
         with open(args.input_fname, "r") as f:
@@ -132,7 +131,8 @@ def create_data(args):
 
         mass = 10 ** data[:, 0] / 1e10 * hlittle
         pos = data[:, 1:4]
-        vel = data[:, 4:7]
+        if args.redshift_space:
+            vel = data[:, 4:7]
 
     mass *= args.mass_correction_factor
 
@@ -165,13 +165,9 @@ def create_data(args):
         value = 10 ** data[:,7]
         value = value[mask]
 
-        if args.gen_both:
-            pos_real = copy.deepcopy(pos)
-
         if args.redshift_space:
+            pos_real = copy.deepcopy(pos)
             pos[:,2] += vel[:,2] / scale_factor / H * hlittle
-
-        if args.gen_both:
             pos_list = [pos_real, pos]
         else:
             pos_list = [pos]
@@ -274,7 +270,6 @@ def create_data(args):
             vz_gal = - relative_vel_rad * cos_theta + relative_vel_tan * sin_theta * np.cos(alpha)
             pos_galaxies[:,2] += ( vel_central[:,2] + vz_gal )/ scale_factor / H * hlittle
         
-        if args.gen_both:
             pos_list = [pos_galaxies_real, pos_galaxies]
         else:
             pos_list = [pos_galaxies]

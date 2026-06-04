@@ -15,7 +15,7 @@ sim_name=TNG300-1
 boxsize=205 #[Mpc/h]
 label=${sim_name}.${snapshot_number}.threshold${threshold}
 
-args="--boxsize $boxsize --npix $npix --npix_z $npix_z --threshold $threshold --gen_both --prob_threshold 1e-5"
+args="--boxsize $boxsize --npix $npix --npix_z $npix_z --threshold $threshold --redshift_space --prob_threshold 1e-5"
 args_catalog="$args --gen_catalog --catalog_threshold 1"
 
 ###############
