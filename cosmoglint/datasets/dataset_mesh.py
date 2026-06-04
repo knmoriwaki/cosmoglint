@@ -260,20 +260,21 @@ class MeshDataset(MeshDatasetBase):
         use_excluded_region=False,
         show_pbar=True
     ):
-        super().__init__(data_path = data_path, 
-                         data_path_mesh = data_path_mesh,
-                         input_features = input_features,
-                         output_features = output_features,
-                         global_features = global_features,
-                         global_params = global_params, 
-                         norm_param_dict = norm_param_dict,
-                         max_length = max_length,
-                         npix_patch = npix_patch,
-                         ndata = ndata,
-                         sort = sort, 
-                         exclude_ratio = exclude_ratio, use_excluded_region = use_excluded_region, 
-                         show_pbar = show_pbar
-                         )
+        super().__init__(
+            data_path = data_path, 
+            data_path_mesh = data_path_mesh,
+            input_features = input_features,
+            output_features = output_features,
+            global_features = global_features,
+            global_params = global_params, 
+            norm_param_dict = norm_param_dict,
+            max_length = max_length,
+            npix_patch = npix_patch,
+            ndata = ndata,
+            sort = sort, 
+            exclude_ratio = exclude_ratio, use_excluded_region = use_excluded_region, 
+            show_pbar = show_pbar
+        )
 
         _, num_params = (self.y[0]).shape
         self.y_padded = torch.zeros(len(self.x), max_length, num_params)
@@ -340,20 +341,21 @@ class MeshCtxDataset(MeshDatasetBase):
         round_id = None,
         show_pbar = True,
     ):
-        super().__init__(data_path = data_path, 
-                         data_path_mesh = data_path_mesh,
-                         input_features = input_features,
-                         output_features = output_features,
-                         global_features = global_features,
-                         global_params = global_params, 
-                         norm_param_dict = norm_param_dict,
-                         max_length = max_length,
-                         npix_patch = npix_patch,
-                         ndata = ndata,
-                         sort = sort, 
-                         exclude_ratio = exclude_ratio, use_excluded_region = use_excluded_region, 
-                         show_pbar = show_pbar
-                        )
+        super().__init__(
+            data_path = data_path, 
+            data_path_mesh = data_path_mesh,
+            input_features = input_features,
+            output_features = output_features,
+            global_features = global_features,
+            global_params = global_params, 
+            norm_param_dict = norm_param_dict,
+            max_length = max_length,
+            npix_patch = npix_patch,
+            ndata = ndata,
+            sort = sort, 
+            exclude_ratio = exclude_ratio, use_excluded_region = use_excluded_region, 
+            show_pbar = show_pbar
+        )
         
         self.max_length = max_length
         self.use_flat_representation = use_flat_representation
@@ -429,21 +431,22 @@ class MeshCtxAugmentedDataset(MeshDatasetBase):
         round_id = None,
         show_pbar = True,
     ):
-        super().__init__(data_path = data_path, 
-                         data_path_mesh = data_path_mesh,
-                         input_features = input_features,
-                         output_features = output_features,
-                         global_features = global_features,
-                         global_params = global_params, 
-                         norm_param_dict = norm_param_dict,
-                         max_length = max_length,
-                         npix_patch = npix_patch,
-                         ndata = ndata,
-                         sort = sort, 
-                         exclude_ratio = exclude_ratio, 
-                         use_excluded_region = use_excluded_region, 
-                         show_pbar = show_pbar
-                         )
+        super().__init__(
+            data_path = data_path, 
+            data_path_mesh = data_path_mesh,
+            input_features = input_features,
+            output_features = output_features,
+            global_features = global_features,
+            global_params = global_params, 
+            norm_param_dict = norm_param_dict,
+            max_length = max_length,
+            npix_patch = npix_patch,
+            ndata = ndata,
+            sort = sort, 
+            exclude_ratio = exclude_ratio, 
+            use_excluded_region = use_excluded_region, 
+            show_pbar = show_pbar
+        )
 
     def _pad_with_mask(self, y, buff=0):
         length = len(y)

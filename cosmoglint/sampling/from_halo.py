@@ -14,6 +14,7 @@ import torch
 
 from cosmoglint.utils import normalize, namespace_to_dict
 
+
 def create_mask(array, threshold): 
     """
     mask out galaxies satisfying either of the following:
@@ -214,3 +215,67 @@ def sample_galaxies_TransNF(
     print("# Number of valid galaxies: {:d}".format(len(generated)))
     
     return generated, mask
+
+
+def flatten_and_mask_generated(generated, mask, **central_fields):
+    """
+    generated: (num_halos, seq_length, num_features)
+    mask:      (num_halos, seq_length)
+
+    central_fields:
+        pos_central=pos
+        vel_central=vel
+        redshift_central=redshift
+    のように渡す。
+
+    Returns
+    -------
+    out: dict
+    """
+    mask = np.asarray(mask, dtype=bool)
+
+    num_halos, seq_length = mask.shape
+
+    if generated.shape[:2] != mask.shape:
+        raise ValueError(
+            f"generated.shape[:2] must match mask.shape, "
+            f"but got {generated.shape[:2]} and {mask.shape}"
+        )
+
+    # Define flag_central
+    flag_central = np.zeros_like(mask, dtype=bool)
+    flag_central[:, 0] = True
+
+    # Flatten mask
+    flat_mask = mask.reshape(-1)
+
+    # Flatten generated
+    generated_flat = generated.reshape(num_halos * seq_length, -1)
+    generated_flat = generated_flat[flat_mask]
+
+    # Flatten flag_central
+    flag_central_flat = flag_central.reshape(-1)
+    flag_central_flat = flag_central_flat[flat_mask]
+
+    out = {
+        "generated": generated_flat,
+        "flag_central": flag_central_flat,
+    }
+
+    # Repeat, flatten, and mask central fields
+    for name, arr in central_fields.items():
+        arr = np.asarray(arr)
+
+        if arr.shape[0] != num_halos:
+            raise ValueError(
+                f"{name}.shape[0] must be num_halos={num_halos}, "
+                f"but got {arr.shape[0]}"
+            )
+
+        arr_repeated = np.repeat(arr[:, None, ...], seq_length, axis=1)
+        arr_flat = arr_repeated.reshape(num_halos * seq_length, *arr.shape[1:])
+        arr_flat = arr_flat[flat_mask]
+
+        out[name] = arr_flat
+
+    return out

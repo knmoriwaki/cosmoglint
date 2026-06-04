@@ -17,7 +17,7 @@ Python>=3.9 is required.
 This package requires PyTorch.
 Please install PyTorch first following https://pytorch.org
 
-Install package and from local clone:
+Install package:
 
 ```bash
 git clone https://github.com/knmoriwaki/cosmoglint.git

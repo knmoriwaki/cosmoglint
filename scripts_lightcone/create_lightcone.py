@@ -19,6 +19,11 @@ from astropy.cosmology import FlatLambdaCDM
 cosmo = FlatLambdaCDM(H0=67.74, Om0=0.3089)
 import astropy.units as u
 
+from cosmoglint.utils.cosmology_utils import ckpc_to_arcsec, dckpc_to_dz
+from cosmoglint.utils.misc import spherical_offsets_and_vz
+from cosmoglint.sampling.from_halo import flatten_and_mask_generated
+
+
 cspeed = 3e10  # [cm/s]
 
 def parse_args():
@@ -130,33 +135,25 @@ def generate_galaxies_in_multiple_redshifts(
         seq_length = mask.shape[1]
         num_features = generated.shape[-1]
 
-        # Define flag_central
-        flag_central = np.zeros_like(mask, dtype=bool)
-        flag_central[:, 0] = True
+        # flatten and mask
+        out = flatten_and_mask_generated(
+            generated,
+            mask,
+            pos_central=pos_now,
+            redshift_central=redshift_now
+        )
 
-        # Flatten the arrays
-        mask = mask.reshape(-1)
-        generated = generated.reshape(-1, num_features) # (num_halos * seq_length, num_features)
-        pos_central = np.repeat(pos_now[:,None,:], seq_length, axis=1).reshape(-1, 3) # (num_halos * seq_length, 3)
-        redshift_central = np.repeat(redshift_now[:,None], seq_length, axis=1).reshape(-1) # (num_halos * seq_length)
-        flag_central = flag_central.reshape(-1)
-
-        # Apply mask to arrays
-        generated = generated[mask] # (num_galaxies_valid, num_features)
-        pos_central = pos_central[mask] # (num_galaxies_valid, 3)
-        redshift_central = redshift_central[mask] # (num_galaxies_valid, 3)
-        flag_central = flag_central[mask] # (num_galaxies_valid, )
-        
         # Append
-        generated_all.append(generated)
-        pos_central_all.append(pos_central)
-        redshift_central_all.append(redshift_central)
-        flag_central_all.append(flag_central)
+        generated_all.append( out["generated"] )
+        pos_central_all.append( out["pos_central"])
+        redshift_central_all.append( out["redshift_central"])
+        flag_central_all.append( out["flag_central"] )
 
     generated_all = np.concatenate(generated_all, axis=0) # (num_galaxies_valid, num_features)
     pos_central_all = np.concatenate(pos_central_all, axis=0)
     redshift_central_all = np.concatenate(redshift_central_all, axis=0) # (num_galaxies_valid,)
     flag_central_all = np.concatenate(flag_central_all, axis=0) # (num_galaxies_valid,)
+
     return generated_all, pos_central_all, redshift_central_all, flag_central_all
 
 def create_lightcone(args):
@@ -191,12 +188,7 @@ def create_lightcone(args):
         print("# Using real space")
         redshift_obs = copy.deepcopy(redshift_real)
 
-    with open("{}/args.json".format(args.model_dir), "r") as f:
-        opt = json.load(f, object_hook=lambda d: argparse.Namespace(**d))
-
-    ### Mask small halos ###
-
-    mask = (np.log10(mass) > args.logm_min)
+    mask = (np.log10(mass) + 10 > args.logm_min)
     mask = mask & (redshift_obs >= args.redshift_min) & (redshift_obs <= args.redshift_max)
     
     mass = mass[mask]
@@ -207,65 +199,57 @@ def create_lightcone(args):
 
     pos = np.stack([pos_x, pos_y, redshift_obs], axis=1) # (num_halos, 3)
 
+    ### Generate galaxies ###
     time_start = time.time()
 
-    ### Generate galaxies ###
-
-    generated_all, pos_central_all, redshift_central_all, flag_central_all = generate_galaxies_in_multiple_redshifts(
+    generated, pos_central, redshift_central, flag_central = generate_galaxies_in_multiple_redshifts(
         args,
         x_in = mass,
         pos = pos,
         redshift_real = redshift_real
     )
-    num_gal = len(generated_all)
 
-    ### Determine positions of galaxies ###
+    ### Add sphereical offsets and redshift-space distortion ###
+    with open("{}/args.json".format(args.model_dir), "r") as f:
+        opt = json.load(f, object_hook=lambda d: argparse.Namespace(**d))
 
-    print("# Generate positions of galaxies")
-    _phi = np.random.uniform(0, 2 * np.pi, size=num_gal)
-    _cos_theta = np.random.uniform(-1, 1, size=num_gal)
-    _sin_theta = np.sqrt(1 - _cos_theta ** 2)
-    
-    from cosmoglint.utils.cosmology_utils import cMpc_to_arcsec, dcMpc_to_dz
     i_dist = opt.output_features.index("SubhaloDist")
-    distance = generated_all[:,i_dist]
-    distance_arcsec = cMpc_to_arcsec(distance, redshift_central_all, cosmo=cosmo, l_with_hlittle=True)
-    distance_z = dcMpc_to_dz(distance, redshift_central_all, cosmo=cosmo, l_with_hlittle=True)
-
-    pos_galaxies = pos_central_all
-    pos_galaxies[:,0] += distance_arcsec * _sin_theta * np.cos(_phi)
-    pos_galaxies[:,1] += distance_arcsec * _sin_theta * np.sin(_phi)
-    pos_galaxies[:,2] += distance_z * _cos_theta
-    
-    ### Add redshift-space distortion ###
+    distance = generated[:,i_dist]
+    distance_arcsec = ckpc_to_arcsec(distance, redshift_central, cosmo=cosmo, l_with_hlittle=True)
+    distance_z = dckpc_to_dz(distance, redshift_central, cosmo=cosmo, l_with_hlittle=True)
 
     if args.redshift_space:
+        i_vr = opt.output_features.index("SubhaloVrad")
+        i_vt = opt.output_features.index("SubhaloVtan")
+        vr = generated[:,i_vr]
+        vt = generated[:,i_vt]
+        offset, vz = spherical_offsets_and_vz(distance_arcsec, distance_z=distance_z, vr=vr, vt=vt, flag_central=flag_central)
 
-        relative_vel_rad = generated_all[:,2]
-        relative_vel_tan = generated_all[:,3]
-        relative_vel_rad[flag_central_all] = 0 # Set vr to 0 for central galaxies
-        alpha = np.random.uniform(0, 2 * np.pi, size=num_gal)
-        vz_gal = - relative_vel_rad * _cos_theta + relative_vel_tan * _sin_theta * np.cos(alpha)
-        
-        beta = vz_gal / (cspeed * 100) # [(km/s) / (km/s)]
+        pos_galaxies = pos_central + offset
 
+        beta = vz / (cspeed * 100) # [(km/s) / (km/s)]
         redshift_rest = pos_galaxies[:,2]
         pos_galaxies[:,2] = ( 1. + redshift_rest ) * np.sqrt( (1. + beta) / (1. - beta) ) - 1.0
 
+    else:
+        offset, _ = spherical_offsets_and_vz(distance_arcsec, distance_z=distance_z)
+        pos_galaxies = pos_central + offset
+
     print(f"# Elapsed time: {time.time() - time_start} sec")
 
+    ### Save
     if args.output_fname is not None:
         
         ### Generate line intensity map ###
 
-        from line_intensity_map import create_line_intensity_map
+        from line_intensity_map import create_and_save_line_intensity_map
         i_sfr = opt.output_features.index("SubhaloSFR")
-        log_sfr = np.log10( generated_all[:,i_sfr] )
-        create_line_intensity_map(
+        log_sfr = np.log10( generated[:,i_sfr] )
+        create_and_save_line_intensity_map(
             pos_x=pos_galaxies[:,0],
             pos_y=pos_galaxies[:,1],
             z_obs=pos_galaxies[:,2],
-            z_real=redshift_central_all,
+            z_real=redshift_central,
             log_sfr=log_sfr,
             fmin=args.fmin,
             fmax=args.fmax,
@@ -282,9 +266,9 @@ def create_lightcone(args):
 
         ### Generate catalog ###
 
-        mask = (generated_all[:,0] > args.catalog_threshold)
+        mask = (generated[:,0] > args.catalog_threshold)
         pos_galaxies = pos_galaxies[mask]
-        redshift = redshift_central_all[mask]
+        redshift = redshift_central[mask]
         luminosity_list = [ luminosity[mask] for luminosity in luminosity_list ]
         
         with h5py.File(args.output_fname, "w") as f:
@@ -298,7 +282,7 @@ def create_lightcone(args):
             f.create_dataset("Positions", data=pos_galaxies, compression="gzip")
             
             for iparam, key in enumerate(opt.output_features):
-                f.create_dataset(key, data=generated_all[:,iparam], compression="gzip")
+                f.create_dataset(key, data=generated[:,iparam], compression="gzip")
         
         print("Galaxy catalog saved to {}".format(args.output_fname))
 

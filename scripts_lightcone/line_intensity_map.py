@@ -15,7 +15,7 @@ arcsec = 4.848136811094e-6 # [rad] ... arcmin / 60 //
 from line_model import calc_line_luminosity, line_dict
 from cosmoglint.utils.cosmology_utils import z_to_log_lumi_dis
 
-def create_line_intensity_map(
+def create_and_save_line_intensity_map(
         pos_x, 
         pos_y, 
         z_obs, 

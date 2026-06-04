@@ -175,10 +175,15 @@ Example `norm_param_file`:
 
 ## Create scripts
 
-Example:
+Example (from halo)
 ```bash
 cd scripts
 python create_data_cube.py --input_fname [input_fname] --model_dir [model_dir] 
+```
+Example (from mesh)
+```bash
+cd scripts
+python create_data_cube_from_mesh.py --input_fname [input_fname] --model_dir [model_dir] 
 ```
 
 ### Important options:
@@ -187,7 +192,7 @@ python create_data_cube.py --input_fname [input_fname] --model_dir [model_dir]
   - Text file that contains halo mass [Msun] in log scale (1st column), comving positions [Mpc/h] (2nd to 4th columns), and velocities [km/s] (5th to 8th columns)
   - [Pinocchio](https://github.com/pigimonaco/Pinocchio) format
 - `--output_fname`: Name of the output hdf5 file to write the generated map to (default: None).
-- `--output_catalog_fname`: Name of the output hdf5 file to write the generated catalog to (default: None).
+- `--output_catalog_fname`: Name of the output file to write the generated catalog to. File is ASCII for `create_data_cube.py` and hdf5 for `create_data_cube_from_mesh.py` (default: None).
 
 - `--model_dir`: Path to a directory containing the trained model (`model.pth` and `args.json`). If not set, column 7 of the input file is used as intensity.
 - `--boxsize`: Size of the simulation box in comoving units [Mpc/h] (default: 100.0).
@@ -228,7 +233,7 @@ Example of `model_config_file`:
 
 ### Important options:
 - `--input_fname`: Path to the lightcone halo catalog. Pinocchio format is supported.
-- `--output_fname`: Name of the output file to write the generated intensity map to (default: None).
+- `--output_fname`: Name of the output hdf5 file to write the generated intensity map to (default: None).
 - `--output_catalog fname`: Name of the output file to write the generated catalog to (default: None).
 
 - `--model_dir`: Path to a directory containing the trained models. 

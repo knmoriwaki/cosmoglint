@@ -22,49 +22,49 @@ from astropy.constants import c as cspeed # [m/s]
 from astropy.cosmology import FlatLambdaCDM
 cosmo_default = FlatLambdaCDM(H0=67.74, Om0=0.3089)
 
-def cMpc_to_arcsec(l_cMpc, z, cosmo=cosmo_default, l_with_hlittle=False): 
+def ckpc_to_arcsec(l_ckpc, z, cosmo=cosmo_default, l_with_hlittle=False): 
     if l_with_hlittle:
         hlittle = cosmo.H0.value / 100
-        l_cMpc = l_cMpc / hlittle # [Mpc/h] -> [Mpc]
-    l_rad = l_cMpc * u.Mpc / cosmo.comoving_transverse_distance(z)
+        l_ckpc = l_ckpc / hlittle # [kpc/h] -> [kpc]
+    l_rad = l_ckpc * u.kpc / cosmo.comoving_transverse_distance(z)
     l_arcsec = (l_rad * u.radian).to(u.arcsec)
     return l_arcsec.value
 
-def arcsec_to_cMpc(l_arcsec, z, cosmo=cosmo_default, l_with_hlittle=False):
+def arcsec_to_ckpc(l_arcsec, z, cosmo=cosmo_default, l_with_hlittle=False):
     l_rad = l_arcsec * u.arcsec / u.radian
-    l_cMpc = ( cosmo.comoving_transverse_distance(z) * l_rad ).to(u.Mpc)
+    l_ckpc = ( cosmo.comoving_transverse_distance(z) * l_rad ).to(u.kpc)
     if l_with_hlittle:
         hlittle = cosmo.H0.value / 100
-        l_cMpc = l_cMpc * hlittle # [Mpc] -> [Mpc/h]
-    return l_cMpc.value 
+        l_ckpc = l_ckpc * hlittle # [kpc] -> [kpc/h]
+    return l_ckpc.value 
 
-def dcMpc_to_dz(l_cMpc, z, cosmo=cosmo_default, l_with_hlittle=False):
+def dckpc_to_dz(l_ckpc, z, cosmo=cosmo_default, l_with_hlittle=False):
     if l_with_hlittle:
         hlittle = cosmo.H0.value / 100
-        l_cMpc = l_cMpc / hlittle # [Mpc/h] -> [Mpc]
-    dx_dz = (cspeed  / cosmo.H(z)).to(u.Mpc)
-    d_z = l_cMpc / dx_dz.value 
+        l_ckpc = l_ckpc / hlittle # [kpc/h] -> [kpc]
+    dx_dz = (cspeed  / cosmo.H(z)).to(u.kpc)
+    d_z = l_ckpc / dx_dz.value 
     return d_z
 
-def dz_to_dcMpc(dz, z, cosmo=cosmo_default, l_with_hlittle=False):
-    dx_dz = (cspeed / cosmo.H(z)).to(u.Mpc)
-    l_cMpc = dz * dx_dz.value 
+def dz_to_dckpc(dz, z, cosmo=cosmo_default, l_with_hlittle=False):
+    dx_dz = (cspeed / cosmo.H(z)).to(u.kpc)
+    l_ckpc = dz * dx_dz.value 
     if l_with_hlittle:
         hlittle = cosmo.H0.value / 100
-        l_cMpc = l_cMpc * hlittle # [Mpc] -> [Mpc/h]
-    return l_cMpc # [Mpc/h] if l_with_hlittle else [Mpc]
+        l_ckpc = l_ckpc * hlittle # [kpc] -> [kpc/h]
+    return l_ckpc # [kpc/h] if l_with_hlittle else [kpc]
 
 def freq_to_comdis(nu_obs, nu_rest, cosmo=cosmo_default, l_with_hlittle=False):
     z = nu_rest / nu_obs - 1
     if z < 0:
         print("Error: z < 0")
         sys.exit(1)
-    l_cMpc = cosmo.comoving_distance(z).to(u.Mpc).value
+    l_ckpc = cosmo.comoving_distance(z).to(u.kpc).value
     if l_with_hlittle:
         hlittle = cosmo.H0.value / 100
-        l_cMpc = l_cMpc * hlittle # [Mpc] -> [Mpc/h]
+        l_ckpc = l_ckpc * hlittle # [kpc] -> [kpc/h]
 
-    return l_cMpc # [Mpc/h] if l_with_hlittle else [Mpc]
+    return l_ckpc # [kpc/h] if l_with_hlittle else [kpc]
 
 def z_to_log_lumi_dis(z, cosmo=cosmo_default):
     return np.log10( cosmo.luminosity_distance(z).to(u.cm).value )
