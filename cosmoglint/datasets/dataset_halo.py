@@ -12,18 +12,19 @@ from tqdm import tqdm
 
 from torch.utils.data import Dataset
 
-from cosmoglint.utils.io_utils import load_values
+from cosmoglint.utils.io_utils import load_values, load_header_values
     
 def load_halo_data(
         file_path, 
         input_features,
         output_features,
-        norm_param_dict=None, 
-        max_length=10, 
-        sort=True,
-        ndata=None,
-        exclude_ratio=0.0, 
-        use_excluded_region=False,
+        global_features = None,
+        norm_param_dict = None, 
+        max_length = 10, 
+        sort = True,
+        ndata = None,
+        exclude_ratio = 0.0, 
+        use_excluded_region = False,
     ):
         
     num_features_in = len(input_features)
@@ -31,7 +32,8 @@ def load_halo_data(
 
     with h5py.File(file_path, "r") as f:
 
-        # Load input features
+        ### Load input features ###
+
         source_list = []
         for feature in input_features:
             x = load_values(f, f"Group/{feature}", norm_param_dict=norm_param_dict)
@@ -62,7 +64,8 @@ def load_halo_data(
             print("# No halo is found in {}".format(file_path))
             return torch.empty((0, num_features_in), dtype=torch.float32), []
 
-        # Load output features
+        ### Load output features ###
+
         target_list = []
         for feature in output_features:
             y = load_values(f, f"Subhalo/{feature}", norm_param_dict=norm_param_dict)
@@ -94,6 +97,17 @@ def load_halo_data(
             y_j = y_j[:max_length] # truncate
             y_j = torch.tensor(y_j, dtype=torch.float32)
             y_list.append(y_j)
+
+        
+        ### Load global features ###        
+
+        if global_features is not None:
+            g_list = []
+            for feature in global_features:
+                g = load_header_values(f, feature, norm_param_dict=norm_param_dict)
+                g_list.append(g)
+        else:
+            g_list = None
             
     x = source[mask]
     x = torch.tensor(x, dtype=torch.float32)
@@ -102,53 +116,87 @@ def load_halo_data(
         x = x[:ndata]
         y_list = y_list[:ndata]
 
-    return x, y_list
+    return x, y_list, g_list
+
+# ============================================================
+# Halo Dataset
+# ============================================================
 
 class HaloDataset(Dataset):
+    """
+    Dataset for loading halo and galaxy data + optional global conditioning parameters.
+    """
     def __init__(
-            self,
-            args,  
-            global_params=None,
+            self, 
+            data_path,
+            input_features,
+            output_features,
+            global_features = None,
+            global_params = None,
+            norm_param_dict = None,
+            max_length = 100,
+            ndata = 1000,
+            use_flat_representation = False,
             sort=True,
             exclude_ratio=0.0,
             use_excluded_region=False,
             show_pbar=True,
         ):
             
-        if not isinstance(args.data_path, list):
-            args.data_path = [args.data_path]
+        if not isinstance(data_path, list):
+            data_path = [data_path]
 
         if global_params is not None:
-            if len(global_params) != len(args.data_path):
-                raise ValueError("The number of global parameter sets ({:d}) must match the number of data files ({:d})".format(len(global_params), len(args.data_path)))
+            if len(global_params) != len(data_path):
+                raise ValueError("The number of global parameter sets ({:d}) must match the number of data files ({:d})".format(len(global_params), len(data_path)))
 
         x = []
         self.y = []
         self.g = []
 
-        plist = args.data_path
+        plist = data_path
         if len(plist) < 20:
             verbose = True 
         else:
             verbose = False
             if show_pbar:
                 plist = tqdm(plist, file=sys.stderr)
-            print("# Loading halo data from {} to {} ({} files)".format(args.data_path[0], args.data_path[-1], len(args.data_path)))
+            print("# Loading halo data from {} to {} ({} files)".format(data_path[0], data_path[-1], len(data_path)))
 
         for i, p in enumerate(plist):
             if verbose:
                 print(f"# Loading halo data from {p}")
     
-            x_tmp, y_tmp = load_halo_data(p, args.input_features, args.output_features, norm_param_dict=args.norm_param_dict, max_length=args.max_length, sort=sort, ndata=args.ndata, exclude_ratio=exclude_ratio, use_excluded_region=use_excluded_region)
+            x_tmp, y_tmp, g_tmp = load_halo_data(
+                file_path = p, 
+                input_features = input_features, 
+                output_features = output_features, 
+                global_features = global_features,
+                norm_param_dict = norm_param_dict, 
+                max_length = max_length, 
+                sort = sort, 
+                ndata = ndata, 
+                exclude_ratio = exclude_ratio, 
+                use_excluded_region = use_excluded_region
+                )
+            
             x.append(x_tmp) 
             self.y = self.y + y_tmp
 
-            if global_params is not None:
-                global_param = global_params[i]
-                g_tmp = np.repeat(global_param[None, :], len(x_tmp), axis=0) # (Nhalo, num_features_global)
-            else:
+            if global_params is None:    
                 g_tmp = np.zeros((len(x_tmp), 1)) # dummy (Nhalo, 1)
-            
+                
+            else:   
+                global_param = global_params[i]
+                for ig, g in enumerate(g_tmp):
+                    if g is not None:
+                        global_param[ig] = g
+
+                if np.isnan(global_param).any():
+                    raise ValueError("global_params still contains Nan Values. Some missing global features may not have been replaced.")
+                
+                g_tmp = np.repeat(global_param[None, :], len(x_tmp), axis=0) # (Nhalo, num_features_global)
+                            
             self.g.append( g_tmp )
 
         self.x = torch.cat(x, dim=0)
@@ -161,15 +209,15 @@ class HaloDataset(Dataset):
         
         _, num_params = (self.y[0]).shape
 
-        self.y_padded = torch.zeros(len(self.x), args.max_length, num_params)
-        self.mask = torch.zeros(len(self.x), args.max_length, num_params, dtype=torch.bool)
+        self.y_padded = torch.zeros(len(self.x), max_length, num_params)
+        self.mask = torch.zeros(len(self.x), max_length, num_params, dtype=torch.bool)
         
         for i, y_i in enumerate(self.y):
             length = len(y_i)
-            self.y_padded[i, :length, :] = y_i[:args.max_length]
+            self.y_padded[i, :length, :] = y_i[:max_length]
             self.mask[i, :length+1, :] = True # use the last + 1 value to learn when to stop
         
-        if args.use_flat_representation:
+        if use_flat_representation:
             self.y_padded = self.y_padded.reshape(len(self.y_padded), -1, 1) # (Nhalo, max_length * output_features, 1)
             self.mask = self.mask.reshape(len(self.mask), -1, 1) # (Nhalo, max_length * output_features, 1)
 

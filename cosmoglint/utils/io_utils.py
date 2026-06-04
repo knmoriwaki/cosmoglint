@@ -5,6 +5,9 @@ import numpy as np
 import h5py
 from collections import defaultdict
 
+# ============================================================
+# Save functions
+# ============================================================
 
 def save_hdf5_catalog_data(data, args, output_features, output_fname):
     args_dict = vars(args)
@@ -45,19 +48,17 @@ def save_hdf5_intensity_data(intensity, args, output_features, output_fname):
     print(f"# Data cube saved as {output_fname}")
 
 
-def convert_to_log(val, val_min):
-    log_val = np.full_like(val, val_min)
-    mask = val > 10**val_min
-    log_val[mask] = np.log10(val[mask])
-    return log_val
+# ============================================================
+# Normalization functions
+# ============================================================
 
-def convert_to_log_with_sign(val):
-    return np.sign(val) * np.log10(np.abs(val) + 1)
-
-def inverse_convert_to_log_with_sign(val):
-    return np.sign(val) * ( 10 ** np.abs( val ) - 1 )
-
-def normalize(x, key, norm_param_dict, inverse=False, convert=True):
+def normalize(
+        x, 
+        key, 
+        norm_param_dict, 
+        inverse=False, 
+        convert=True
+    ):
     """
     x: array-like
     key: str
@@ -104,7 +105,28 @@ def normalize(x, key, norm_param_dict, inverse=False, convert=True):
 
     return x
 
-def load_values(f, key, norm_param_dict=None):
+def convert_to_log(val, val_min):
+    log_val = np.full_like(val, val_min)
+    mask = val > 10**val_min
+    log_val[mask] = np.log10(val[mask])
+    return log_val
+
+def convert_to_log_with_sign(val):
+    return np.sign(val) * np.log10(np.abs(val) + 1)
+
+def inverse_convert_to_log_with_sign(val):
+    return np.sign(val) * ( 10 ** np.abs( val ) - 1 )
+
+# ============================================================
+# Load values from hdf5 file f
+# ============================================================
+
+def load_values(
+        f, 
+        key, 
+        norm_param_dict=None
+    ):
+
     if key not in f:
         raise ValueError(f"Key '{key}' not found in the file.")
 
@@ -113,15 +135,42 @@ def load_values(f, key, norm_param_dict=None):
         return data
     else:
         return normalize(data, key, norm_param_dict)
+    
+def load_header_values(
+        f, 
+        key, 
+        norm_param_dict=None
+    ):
+    
+    if "Header" in f and key in f["Header"].attrs:
+        data = f["Header"].attrs[key]
 
-def load_global_params(global_param_file, global_features, norm_param_dict=None):
+        if key is "Redshift":
+            data += 0.1 * np.random.normal(0, 0.1) # Add scatter to learn intermediate redshifts
+            
+        if norm_param_dict is None:
+            return data
+        else:
+            return normalize(data, key, norm_param_dict)                
+    else:
+        return None
+    
+# ============================================================
+# Load global parameters from ascii file
+# ============================================================
+
+def load_global_params(
+        global_param_file, 
+        global_features, 
+        norm_param_dict=None
+        ):
 
     if global_features is None:
-        global_params = None
+        return None
 
     else:
         if global_param_file is None:
-            raise ValueError("global_param_file must be specified when global_features is provided.")
+            return None
         
         if not isinstance(global_param_file, list):
             global_param_file = [global_param_file]
@@ -129,15 +178,32 @@ def load_global_params(global_param_file, global_features, norm_param_dict=None)
         global_params = []
         for f in global_param_file:
             data = np.genfromtxt(f, names=True, dtype=None, encoding="utf-8")
-            global_params_now = np.vstack([data[name] for name in global_features]).T.astype(np.float32)
+            data = np.atleast_1d(data)
+
+            global_params_now = []
+            for name in global_features:
+                if name in data.dtype.names:
+                    values = data[name]
+                else:
+                    values = np.full(len(data), np.nan) # This not-found value will be replaced by the parameter obtained in data file. If not, ValueError will be raised.
+
+                global_params_now.append(values)
+
+            global_params_now = np.vstack(global_params_now).T.astype(np.float32)
             global_params.append(global_params_now)
 
         global_params = np.vstack(global_params)
 
         for i, key in enumerate(global_features):
-            global_params[...,i] = normalize(global_params[...,i], key, norm_param_dict)        
+            values = global_params[...,i]
+            valid = ~np.isnan(values)
+            global_params[valid,i] = normalize(values[valid], key, norm_param_dict)        
 
     return global_params # (ndata, num_features_global)
+
+# ============================================================
+# Load mesh data from hdf5 file
+# ============================================================
 
 def load_mesh_data(
         file_path, 
@@ -166,7 +232,16 @@ def load_mesh_data(
 
     return source, pixel_size
     
-def load_galaxy_data(file_path, features, norm_param_dict):
+# ============================================================
+# Load galaxy data from hdf5 file
+# ============================================================
+
+def load_galaxy_data(
+        file_path, 
+        features, 
+        global_features=None, 
+        norm_param_dict=None
+    ):
     key_to_indices = defaultdict(list)
 
     for feat in features:
@@ -188,12 +263,20 @@ def load_galaxy_data(file_path, features, norm_param_dict):
             x = x[:, idxs]
             gal_data_list.append(x)
 
+        if global_features is not None:
+            g_list = []
+            for feature in global_features:
+                g = load_header_values(f, feature, norm_param_dict=norm_param_dict)
+                g_list.append(g)
+        else:
+            g_list = None
+
     gal_data = np.concatenate(gal_data_list, axis=1) # (N, num_features)
 
     # mask
     mask = (gal_data > 0).all(axis=1)
     gal_data = gal_data[mask]
 
-    return gal_data
+    return gal_data, g_list
 
  

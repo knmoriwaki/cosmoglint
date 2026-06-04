@@ -15,6 +15,8 @@ from cosmoglint.datasets import HaloDataset, MeshDataset, MeshCtxDataset
 from cosmoglint.utils.io_utils import load_global_params
 from cosmoglint.model.transformer_nf import transformer_nf_model, my_stop_predictor, calculate_transformer_nf_loss
 
+from train_transformer import my_load_data
+
 def parse_args():
 
     parser = argparse.ArgumentParser()
@@ -58,7 +60,10 @@ def train_model(args):
 
     device = torch.device(f"cuda:{args.gpu_id}" if torch.cuda.is_available() else "cpu")
 
-    ### Load model
+    ####################
+    ### Define model ###
+    ####################
+
     args.num_features_cond = len(args.input_features)
     args.num_features_in = len(args.output_features)
     args.num_features_global = 0 if args.global_features is None else len(args.global_features)
@@ -71,65 +76,29 @@ def train_model(args):
     print(model)
     print(flow)
 
-    ### Load data
-    with open(args.norm_param_file, "r") as f:
+    #################
+    ### Load data ###
+    #################
+
+    train_dataloader, val_dataloader = my_load_data(args)
+        
+    ######################
+    ### Save arguments ###
+    ######################
+    
+    with open(args.norm_param_file) as f:
         norm_param_dict = json.load(f)
 
-    global_params = load_global_params(args.global_param_file, args.global_features, norm_param_dict=norm_param_dict)
-    
-    data_path = args.data_path.copy()
-    if "*" in data_path[0] and args.indices is not None:
-        # Currently only support one data path with *
-        if len(data_path) > 1:
-            raise ValueError("When data_path contains *, only one data path is allowed.")
-        
-        indices = args.indices.split("-")
-        istart = int(indices[0])
-        iend = int(indices[1])
-        print(f"# Using data files from {istart} to {iend}")
-        data_path = [ data_path[0].replace("*", str(i)) for i in range(istart, iend+1) ]
-        
-        if global_params is not None:
-            global_params = global_params[istart:iend+1, :]
-
-    if args.model_name == "mesh_conditioned_transformer": 
-        dataset_class = MeshDataset
-    elif args.model_name == "mesh_sequence_conditioned_transformer":
-        dataset_class = MeshCtxDataset
-    else:
-        dataset_class = HaloDataset
-    dataset = dataset_class(args, global_params=global_params, exclude_ratio=args.exclude_ratio, show_pbar=args.show_pbar)    
-    train_size = int(args.train_ratio * len(dataset))
-    val_size = len(dataset) - train_size
-    train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
-
-    if args.sampler_weight_min < 1:
-        from cosmoglint.utils import get_sampler
-        x = train_dataset.dataset.x[train_dataset.indices]
-        x = x.mean(dim=tuple(range(1, x.ndim)))
-        sampler = get_sampler(x, xmin=args.sampler_xmin, xmax=args.sampler_xmax, weight_min=args.sampler_weight_min)
-        train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, sampler=sampler) 
-
-        x = val_dataset.dataset.x[val_dataset.indices]
-        x = x.mean(dim=tuple(range(1, x.ndim)))
-        sampler = get_sampler(x, xmin=args.sampler_xmin, xmax=args.sampler_xmax, weight_min=args.sampler_weight_min)
-        val_dataloader = DataLoader(val_dataset, batch_size=args.batch_size, sampler=sampler)
-    else:
-        train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
-        val_dataloader = DataLoader(val_dataset, batch_size=args.batch_size)
-
-    
-    print(f"# Training data: {len(train_dataset)}")
-    print(f"# Validation data: {len(val_dataset)}")
-        
-    ### Save arguments
     args.norm_param_dict = norm_param_dict
     fname = f"{args.output_dir}/args.json"
     with open(fname, "w") as f:
         json.dump(vars(args), f)
     print(f"# Arguments saved to {fname}")
 
-    ### Training
+    ################
+    ### Training ###
+    ################
+
     params = list(model.parameters()) + list(flow.parameters()) 
     optimizer = torch.optim.Adam(params, lr=args.lr, weight_decay=1e-5)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.num_epochs, eta_min=1e-6)
@@ -165,13 +134,14 @@ def train_model(args):
 
                 loss.backward()
                 optimizer.step()
-            
+
+                ### Write log ###
                 epoch_now = epoch + count / num_batches
-                
                 f.write(f"{epoch_now:.4f} {loss.item():.4f} {loss_val.item():.4f}\n")
 
             scheduler.step()
 
+            ### Save model ###
             if (epoch + 1) % args.save_freq == 0 or epoch + 1 == args.num_epochs: 
                 fname = "{}/model_ep{:d}.pth".format(args.output_dir, epoch+1)
                 torch.save(model.state_dict(), fname)

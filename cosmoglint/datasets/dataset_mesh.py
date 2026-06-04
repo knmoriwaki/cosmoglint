@@ -104,45 +104,101 @@ def get_random_patches(
           
     return x_list, y_list
 
+# ============================================================
+# Mesh Dataset Base
+# ============================================================
+
 class MeshDatasetBase(Dataset):
+    """
+    Base class for Mesh Dataset. 
+
+    """
     def __init__(
         self, 
-        args,
-        global_params=None,
+        data_path,
+        data_path_mesh,
+        input_features,
+        output_features,
+        global_features = None,
+        global_params = None,
+        norm_param_dict = None,
+        max_length = 100,
+        npix_patch = 16,
+        ndata = 1000,
+        use_flat_representation = False,
         sort=True, 
         exclude_ratio=0,
         use_excluded_region=False,
         show_pbar=True
     ):
         
-        if not isinstance(args.data_path, list):
-            args.data_path = [args.data_path]
-        if not isinstance(args.data_path_mesh, list):
-            args.data_path_mesh = [args.data_path_mesh]
+        if not isinstance(data_path, list):
+            data_path = [data_path]
+        if not isinstance(data_path_mesh, list):
+            data_path_mesh = [data_path_mesh]
 
-        if len(args.data_path) != len(args.data_path_mesh):
+        if len(data_path) != len(data_path_mesh):
             raise ValueError("The number of paths and path_mesh must be the same.")
         
         self.x = []
         self.y = []
+        self.g = []
 
-        for i, (p, p_dm) in enumerate(zip(args.data_path, args.data_path_mesh)):
-            dm_density, pixel_size = load_mesh_data(p_dm, args.input_features, args.norm_param_dict)
-            gal_data = load_galaxy_data(p, args.output_features, args.norm_param_dict)
-            x_tmp, y_tmp = get_random_patches(dm_density, gal_data, args.ndata, args.npix_patch, pixel_size, args.output_features, max_length=args.max_length, sort=sort, exclude_ratio=exclude_ratio, use_excluded_region=use_excluded_region, show_pbar=show_pbar)
+        for i, (p, p_dm) in enumerate(zip(data_path, data_path_mesh)):
+            dm_density, pixel_size = load_mesh_data(
+                file_path = p_dm, 
+                features = input_features, 
+                norm_param_dict = norm_param_dict
+                )
+            gal_data, g_tmp = load_galaxy_data(
+                file_path = p, 
+                features = output_features, 
+                global_features = global_features, 
+                norm_param_dict = norm_param_dict
+            )
+            x_tmp, y_tmp = get_random_patches(
+                dm_density, 
+                gal_data, 
+                ndata, 
+                npix_patch, 
+                pixel_size, 
+                output_features, 
+                max_length=max_length, 
+                sort=sort, 
+                exclude_ratio=exclude_ratio, 
+                use_excluded_region=use_excluded_region, 
+                show_pbar=show_pbar
+                )
             
             self.x = self.x + x_tmp
             self.y = self.y + y_tmp
 
+            if global_params is not None:       
+                global_param = global_params[i]
+                for ig, g in enumerate(g_tmp):
+                    if g is not None:
+                        global_param[ig] = g
+
+                if np.isnan(global_param).any():
+                    raise ValueError("global_params still contains Nan Values. Some missing global features may not have been replaced.")
+                
+                g_tmp = np.repeat(global_param[None, :], len(x_tmp), axis=0) # (Nhalo, num_features_global)
+
+            else:
+                g_tmp = np.zeros((len(x_tmp), 1)) # dummy (Nhalo, 1)
+
+            self.g.append( g_tmp )
+
         self.x = torch.tensor( np.stack(self.x, axis=0), dtype=torch.float32) # (num_patches, npix_patch, npix_patch, npix_patch, num_features_cond)
         self.x = self.x.permute(0, 4, 1, 2, 3) # (num_patches, num_features_cond, npix_patch, npix_patch, npix_patch)  
 
-        self.pixel_size = pixel_size
-        self.max_length = args.max_length
-        self.pos_idx = get_index_list(args.output_features, "SubhaloPos")
-        self.vel_idx = get_index_list(args.output_features, "SubhaloVel")
-        self.rest_idx = [i for i in range(args.num_features_in) if i not in (set(self.pos_idx) | set(self.vel_idx))]
+        self.g = np.vstack(self.g)
+        self.g = torch.tensor(self.g, dtype=torch.float32)
 
+        self.pixel_size = pixel_size
+        self.max_length = max_length
+        self.pos_idx = get_index_list(output_features, "SubhaloPos")
+        self.vel_idx = get_index_list(output_features, "SubhaloVel")
 
     def __len__(self):
         return len(self.x)
@@ -177,28 +233,58 @@ class MeshDatasetBase(Dataset):
     def __getitem__(self, idx):
         raise NotImplementedError("getitem is not implemented!")
 
+# ============================================================
+# Mesh Dataset
+# ============================================================
+
 class MeshDataset(MeshDatasetBase):
+    """
+    Dataset for loading mesh and galaxy data. 
+    Galaxies are NOT used as context.
+    """
     def __init__(
         self, 
-        args, 
-        global_params=None,
+        data_path,
+        data_path_mesh,
+        input_features,
+        output_features,
+        global_features = None,
+        global_params = None,
+        norm_param_dict = None,
+        max_length = 100,
+        npix_patch = 16,
+        ndata = 1000,
+        use_flat_representation = False,
         sort=True, 
         exclude_ratio=0, 
         use_excluded_region=False,
         show_pbar=True
     ):
-        super().__init__(args, global_params=global_params, sort=sort, exclude_ratio=exclude_ratio, use_excluded_region=use_excluded_region, show_pbar=show_pbar)
+        super().__init__(data_path = data_path, 
+                         data_path_mesh = data_path_mesh,
+                         input_features = input_features,
+                         output_features = output_features,
+                         global_features = global_features,
+                         global_params = global_params, 
+                         norm_param_dict = norm_param_dict,
+                         max_length = max_length,
+                         npix_patch = npix_patch,
+                         ndata = ndata,
+                         sort = sort, 
+                         exclude_ratio = exclude_ratio, use_excluded_region = use_excluded_region, 
+                         show_pbar = show_pbar
+                         )
 
         _, num_params = (self.y[0]).shape
-        self.y_padded = torch.zeros(len(self.x), args.max_length, num_params)
-        self.mask = torch.zeros(len(self.x), args.max_length, num_params, dtype=torch.bool)
+        self.y_padded = torch.zeros(len(self.x), max_length, num_params)
+        self.mask = torch.zeros(len(self.x), max_length, num_params, dtype=torch.bool)
         
         for i, y_i in enumerate(self.y):
             length = len(y_i)
-            self.y_padded[i, :length, :] = y_i[:args.max_length]
+            self.y_padded[i, :length, :] = y_i[:max_length]
             self.mask[i, :length+1, :] = True # use the last + 1 value to learn when to stop
 
-        self.use_flat_representation = args.use_flat_representation
+        self.use_flat_representation = use_flat_representation
                 
     def __getitem__(self, idx):
         x = self.x[idx]
@@ -226,28 +312,58 @@ class MeshDataset(MeshDatasetBase):
         }
         return out
     
+# ============================================================
+# Mesh + Ctx Dataset
+# ============================================================
+    
 class MeshCtxDataset(MeshDatasetBase):
+    """
+    Dataset for loading mesh and galaxy data.
+    Galaxies are used as context data in addition to target data.
+    """
     def __init__(
         self, 
-        args,
-        global_params=None,
-        sort=True, 
-        exclude_ratio=0, 
-        use_excluded_region=False,
-        round_id=None,
-        show_pbar=True,
+        data_path,
+        data_path_mesh,
+        input_features,
+        output_features,
+        global_features = None,
+        global_params = None,
+        norm_param_dict = None,
+        max_length = 100,
+        npix_patch = 16,
+        ndata = 1000,
+        use_flat_representation = False,
+        sort = True, 
+        exclude_ratio = 0, 
+        use_excluded_region = False,
+        round_id = None,
+        show_pbar = True,
     ):
-        super().__init__(args, global_params=global_params, sort=sort, exclude_ratio=exclude_ratio, use_excluded_region=use_excluded_region, show_pbar=show_pbar)
+        super().__init__(data_path = data_path, 
+                         data_path_mesh = data_path_mesh,
+                         input_features = input_features,
+                         output_features = output_features,
+                         global_features = global_features,
+                         global_params = global_params, 
+                         norm_param_dict = norm_param_dict,
+                         max_length = max_length,
+                         npix_patch = npix_patch,
+                         ndata = ndata,
+                         sort = sort, 
+                         exclude_ratio = exclude_ratio, use_excluded_region = use_excluded_region, 
+                         show_pbar = show_pbar
+                        )
         
-        self.max_length = args.max_length
-        self.use_flat_representation = args.use_flat_representation
+        self.max_length = max_length
+        self.use_flat_representation = use_flat_representation
         self.round_id = round_id
 
         _, num_params = self.y[0].shape
-        self.y_tgt = torch.zeros(len(self.x), args.max_length, num_params)
-        self.y_ctx = torch.zeros(len(self.x), args.max_length, num_params)
-        self.mask_tgt = torch.zeros(len(self.x), args.max_length, num_params, dtype=torch.bool)
-        self.mask_ctx = torch.zeros(len(self.x), args.max_length, num_params, dtype=torch.bool)
+        self.y_tgt = torch.zeros(len(self.x), max_length, num_params)
+        self.y_ctx = torch.zeros(len(self.x), max_length, num_params)
+        self.mask_tgt = torch.zeros(len(self.x), max_length, num_params, dtype=torch.bool)
+        self.mask_ctx = torch.zeros(len(self.x), max_length, num_params, dtype=torch.bool)
         self.boundary = torch.zeros(len(self.x), 6)
 
         for i, y in enumerate(self.y):
@@ -263,7 +379,7 @@ class MeshCtxDataset(MeshDatasetBase):
             self.y_ctx[i, :len(y_ctx)] = y_ctx
             self.mask_ctx[i, :len(y_ctx)] = True
 
-        if args.use_flat_representation:
+        if use_flat_representation:
             self.y_tgt = self.y_tgt.reshape(len(self.x), -1, 1)
             self.y_ctx = self.y_ctx.reshape(len(self.x), -1, 1)
             self.mask_tgt = self.mask_tgt.reshape(len(self.x), -1, 1)
@@ -286,17 +402,48 @@ class MeshCtxDataset(MeshDatasetBase):
         return out
     
 class MeshCtxAugmentedDataset(MeshDatasetBase):
+    """
+    Dataset for loading mesh and galaxy data.
+    Galaxies are used as context data in addition to target data.
+    
+    Data structure is same as MeshCtxDataset, but here data qugmentation is applied.
+    Note that the data augumentation is not optimized yet.
+    """
+
     def __init__(
-        self, 
-        args,
-        global_params=None,
-        sort=True, 
-        npix_exclude=0, 
-        use_excluded_region=False,
-        round_id=None,
-        show_pbar=True,
+        self,
+        data_path,
+        data_path_mesh,
+        input_features,
+        output_features,
+        global_features = None,
+        global_params = None,
+        norm_param_dict = None,
+        max_length = 100,
+        npix_patch = 16,
+        ndata = 1000,
+        use_flat_representation = False, 
+        sort = True, 
+        exclude_ratio = 0, 
+        use_excluded_region = False,
+        round_id = None,
+        show_pbar = True,
     ):
-        super().__init__(args, global_parms=global_params, sort=sort, npix_exclude=npix_exclude, use_excluded_region=use_excluded_region, show_pbar=show_pbar)
+        super().__init__(data_path = data_path, 
+                         data_path_mesh = data_path_mesh,
+                         input_features = input_features,
+                         output_features = output_features,
+                         global_features = global_features,
+                         global_params = global_params, 
+                         norm_param_dict = norm_param_dict,
+                         max_length = max_length,
+                         npix_patch = npix_patch,
+                         ndata = ndata,
+                         sort = sort, 
+                         exclude_ratio = exclude_ratio, 
+                         use_excluded_region = use_excluded_region, 
+                         show_pbar = show_pbar
+                         )
 
     def _pad_with_mask(self, y, buff=0):
         length = len(y)

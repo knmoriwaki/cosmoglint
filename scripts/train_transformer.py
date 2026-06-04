@@ -46,6 +46,9 @@ def parse_args():
 
     return parser.parse_args()
 
+
+
+
 def train_model(args):
 
     np.random.seed(args.seed)
@@ -66,7 +69,8 @@ def train_model(args):
     for k, v in vars(args).items():
         print(f"{k}: {v}")
 
-    ### Define model   
+    ### Define model ###
+    
     args.num_features_cond = len(args.input_features)
     args.num_features_in = len(args.output_features)
     args.num_features_global = 0 if args.global_features is None else len(args.global_features)
@@ -74,102 +78,22 @@ def train_model(args):
     model = transformer_model(args)
     model.to(device)
     print(model)
+    
+    ### Load data ###
 
-    ### Load data
+    train_dataloader, val_dataloader = my_load_data(args)
+
+    ### Save arguments ###
+    
     with open(args.norm_param_file) as f:
         norm_param_dict = json.load(f)
     args.norm_param_dict = norm_param_dict
-
-    global_params = load_global_params(args.global_param_file, args.global_features, norm_param_dict=norm_param_dict)
-    
-    data_path = args.data_path.copy()
-    if "*" in data_path[0] and args.indices is not None:
-        # Currently only support one data path with *
-        if len(data_path) > 1:
-            raise ValueError("When data_path contains *, only one data path is allowed.")
-        
-        indices = args.indices.split("-")
-        istart = int(indices[0])
-        iend = int(indices[1])
-        print(f"# Using data files from {istart} to {iend}")
-        args.data_path = [ data_path[0].replace("*", str(i)) for i in range(istart, iend+1) ]
-        
-        if global_params is not None:
-            global_params = global_params[istart:iend+1, :]
-
-    if args.model_name == "mesh_conditioned_transformer": 
-        dataset_class = MeshDataset
-    elif args.model_name == "mesh_sequence_conditioned_transformer":
-        dataset_class = MeshCtxDataset
-    else:
-        dataset_class = HaloDataset
-    dataset = dataset_class(args, global_params=global_params, exclude_ratio=args.exclude_ratio, show_pbar=args.show_pbar)
-    train_size = int(args.train_ratio * len(dataset))
-    val_size = len(dataset) - train_size
-    train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
-    
-    if args.sampler_weight_min < 1:
-        from cosmoglint.utils import get_sampler
-        x = train_dataset.dataset.x[train_dataset.indices]
-        x = x.mean(dim=tuple(range(1, x.ndim)))
-        sampler = get_sampler(x, xmin=args.sampler_xmin, xmax=args.sampler_xmax, weight_min=args.sampler_weight_min)
-        train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, sampler=sampler) 
-
-        x = val_dataset.dataset.x[val_dataset.indices]
-        x = x.mean(dim=tuple(range(1, x.ndim)))
-        sampler = get_sampler(x, xmin=args.sampler_xmin, xmax=args.sampler_xmax, weight_min=args.sampler_weight_min)
-        val_dataloader = DataLoader(val_dataset, batch_size=args.batch_size, sampler=sampler)
-    else:
-        train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
-        val_dataloader = DataLoader(val_dataset, batch_size=args.batch_size)
-
-    print("# Training data: {:d}".format(len(train_dataset)))
-    print("# Validation data: {:d}".format(len(val_dataset)))
-
-    ### Save arguments
     fname = "{}/args.json".format(args.output_dir)
     with open(fname, "w") as f:
         json.dump(vars(args), f)
     print("# Arguments saved to {}".format(fname))
 
-    ### Training
-    def calc_loss(batch, weight=None, device=device):
-
-        import torch.nn.functional as F
-
-        seq = batch["target"].to(device)     # (batch, max_length, num_features_in)
-        mask = batch["mask"].to(device)   # (batch, max_length)
-        condition = batch["condition"]
-        if isinstance(condition, dict):
-            condition = {k: v.to(device) for k, v in condition.items()}
-        else:
-            condition = condition.to(device)
-        global_cond = batch["global_cond"].to(device) # (batch, num_features_global)
-        
-        input_seq = seq[:, :-1]
-        target = seq
-
-        output = model(condition, input_seq, global_cond=global_cond) # (batch, max_length, num_features_in, num_features_out)
-        #_, output = model.generate(condition, seq=seq, teacher_forcing_ratio=teacher_forcing_ratio) 
-        # output: (batch, max_length, num_features_in, num_features_out)
-
-        if weight is None:
-            weight = torch.ones_like(target, dtype=torch.float32, device=target.device) # (batch, seq_length)
-
-        weight = mask * weight
-
-        log_prob = torch.log( output + 1e-8 )
-        target_bins = (target * args.num_features_out).long() # (batch, seq_length, num_features_in) [0, 1] -> [0, num_features_out-1]
-        target_bins = torch.clamp(target_bins, min=0, max=args.num_features_out - 1)
-
-        log_prob_flatten = log_prob.contiguous().view(-1, args.num_features_out) # (batch * seq_length * num_features_in, num_features_out)
-        target_bins_flatten = target_bins.contiguous().view(-1) # (batch * seq_length * num_features_in, )
-        weight_flatten = weight.contiguous().view(-1) # (batch * seq_length * num_features_in, )
-
-        loss_nll = F.nll_loss(log_prob_flatten, target_bins_flatten, reduction='none') 
-        loss = (loss_nll * weight_flatten).sum() / ( (weight_flatten).sum() + 1e-8 )
-
-        return loss
+    ### Training ###
 
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-5)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.num_epochs, eta_min=1e-6)
@@ -190,7 +114,7 @@ def train_model(args):
 
             for count, batch in enumerate(train_dataloader):
                 optimizer.zero_grad()
-                loss = calc_loss(batch) #, weight=weight)
+                loss = calc_loss(model, batch, device=device) #, weight=weight)
 
                 loss.backward()
                 optimizer.step()
@@ -198,18 +122,18 @@ def train_model(args):
                 model.eval()
                 for batch_val in val_dataloader:
                     with torch.no_grad():
-                        loss_val = calc_loss(batch_val)
+                        loss_val = calc_loss(model, batch_val, device=device)
                         break # show one batch result only
                 model.train()
 
+                ### Write log ###
                 epoch_now = epoch + count / num_batches
-                
                 log = "{:.8f} {:.4f} {:.4f} ".format(epoch_now, loss.item(), loss_val.item())
                 f.write("{}\n".format(log))
 
             scheduler.step()
             
-            # save model
+            ### Save model ###
             if (epoch + 1) % args.save_freq == 0 or epoch + 1 == args.num_epochs: 
                 fname = "{}/model_ep{:d}.pth".format(args.output_dir, epoch+1)
                 torch.save(model.state_dict(), fname)
@@ -220,6 +144,174 @@ def train_model(args):
 
                 fname = "{}/model.pth".format(args.output_dir)
                 torch.save(model.state_dict(), fname)
+
+
+# ============================================================
+# Loss calculation
+# ============================================================
+
+def calc_loss(model, batch, weight=None, device="cpu"):
+    """
+    Compute the loss for one batch.
+    
+    Parameters
+    ----------
+    model : torch.nn.Module
+        Model used to compute predictions or log-probabilities.
+    batch : dict
+        Mini-batch returned by the dataloader.
+    device : torch.device or str, optional
+        Device used for tensors created inside this function.
+
+    Returns
+    -------
+    loss : torch.Tensor
+        Scalar loss tensor used for backpropagation.
+    """
+
+    import torch.nn.functional as F
+
+    seq = batch["target"].to(device)    # (batch, max_length, num_features_in)
+    mask = batch["mask"].to(device)   # (batch, max_length)
+    condition = batch["condition"]
+    if isinstance(condition, dict):
+        condition = {k: v.to(device) for k, v in condition.items()}
+    else:
+        condition = condition.to(device)
+    global_cond = batch["global_cond"].to(device) # (batch, num_features_global)
+    
+    input_seq = seq[:, :-1]
+    target = seq
+
+    output = model(condition, input_seq, global_cond=global_cond) # (batch, max_length, num_features_in, num_features_out)
+    #_, output = model.generate(condition, seq=seq, teacher_forcing_ratio=teacher_forcing_ratio) 
+    # output: (batch, max_length, num_features_in, num_features_out)
+
+    num_features_out = output.shape[-1]
+
+    if weight is None:
+        weight = torch.ones_like(target, dtype=torch.float32, device=target.device) # (batch, seq_length)
+
+    weight = mask * weight
+
+    log_prob = torch.log( output + 1e-8 )
+    target_bins = (target * num_features_out).long() # (batch, seq_length, num_features_in) [0, 1] -> [0, num_features_out-1]
+    target_bins = torch.clamp(target_bins, min=0, max=num_features_out - 1)
+
+    log_prob_flatten = log_prob.contiguous().view(-1, num_features_out) # (batch * seq_length * num_features_in, num_features_out)
+    target_bins_flatten = target_bins.contiguous().view(-1) # (batch * seq_length * num_features_in, )
+    weight_flatten = weight.contiguous().view(-1) # (batch * seq_length * num_features_in, )
+
+    loss_nll = F.nll_loss(log_prob_flatten, target_bins_flatten, reduction='none') 
+    loss = (loss_nll * weight_flatten).sum() / ( (weight_flatten).sum() + 1e-8 )
+
+    return loss
+
+
+# ============================================================
+# Data loading
+# ============================================================
+
+def my_load_data(args):
+    """
+    Load input and target data and optional global parameters.
+
+    Parameters
+    ----------
+    args : ...
+
+    Returns
+    -------
+    train_dataloader : torch.utils.data.DataLoader
+        Dataloader used in the training loop.
+    val_dataloader : torch.utils.data.DataLoader
+        Dataloader used for validation.
+    """
+
+    with open(args.norm_param_file) as f:
+        norm_param_dict = json.load(f)
+
+    _data_path = args.data_path.copy()    
+    if "*" in _data_path[0] and args.indices is not None:
+        # Currently only support one data path with *
+        if len(_data_path) > 1:
+            raise ValueError("When data_path contains *, only one data path is allowed.")
+        
+        indices = args.indices.split("-")
+        istart = int(indices[0])
+        iend = int(indices[1])
+        print(f"# Using data files from {istart} to {iend}")
+        data_path = [ _data_path[0].replace("*", str(i)) for i in range(istart, iend+1) ]
+    else:
+        data_path = _data_path
+        istart = 0
+        iend = len(data_path)
+
+    ### Global parameters ###
+    
+    global_params = load_global_params(args.global_param_file, args.global_features, norm_param_dict=norm_param_dict)
+
+    if args.global_features is not None:
+        if global_params is None:
+            global_params = np.full((len(data_path), len(args.global_features)), np.nan) # This will be replaced by the parameter obtained in data file. If not, ValueError will be raised.
+        else:
+            global_params = global_params[istart:iend+1, :]
+
+    ### Dataset ###
+   
+    dataset_kwargs = {
+       "data_path": data_path,
+       "input_features": args.input_features,
+       "output_features": args.output_features,
+       "global_features": args.global_features,
+       "norm_param_dict": norm_param_dict,
+       "max_length": args.max_length,
+       "ndata": args.ndata,
+       "use_flat_representation": args.use_flat_representation,
+       "global_params": global_params,
+       "exclude_ratio": args.exclude_ratio,
+       "show_pbar": args.show_pbar
+    }
+
+    if args.model_name == "mesh_conditioned_transformer": 
+        dataset_class = MeshDataset
+        dataset_kwargs["data_path_mesh"] = args.data_path_mesh
+        dataset_kwargs["npix_patch"] = args.npix_patch
+    elif args.model_name == "mesh_sequence_conditioned_transformer":
+        dataset_class = MeshCtxDataset
+        dataset_kwargs["data_path_mesh"] = args.data_path_mesh
+        dataset_kwargs["npix_patch"] = args.npix_patch
+    else:
+        dataset_class = HaloDataset
+
+    dataset = dataset_class(**dataset_kwargs)
+    train_size = int(args.train_ratio * len(dataset))
+    val_size = len(dataset) - train_size
+    train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
+    
+    ### Sampler ###
+    
+    if args.sampler_weight_min < 1:
+        from cosmoglint.utils import get_sampler
+        x = train_dataset.dataset.x[train_dataset.indices]
+        x = x.mean(dim=tuple(range(1, x.ndim)))
+        sampler = get_sampler(x, xmin=args.sampler_xmin, xmax=args.sampler_xmax, weight_min=args.sampler_weight_min)
+        train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, sampler=sampler) 
+
+        x = val_dataset.dataset.x[val_dataset.indices]
+        x = x.mean(dim=tuple(range(1, x.ndim)))
+        sampler = get_sampler(x, xmin=args.sampler_xmin, xmax=args.sampler_xmax, weight_min=args.sampler_weight_min)
+        val_dataloader = DataLoader(val_dataset, batch_size=args.batch_size, sampler=sampler)
+    else:
+        train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
+        val_dataloader = DataLoader(val_dataset, batch_size=args.batch_size)
+ 
+    print("# Training data: {:d}".format(len(train_dataset)))
+    print("# Validation data: {:d}".format(len(val_dataset)))
+
+    return train_dataloader, val_dataloader
+
+
 
 if __name__ == "__main__":
     args = parse_args()
