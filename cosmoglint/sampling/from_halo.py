@@ -226,7 +226,6 @@ def flatten_and_mask_generated(generated, mask, **central_fields):
         pos_central=pos
         vel_central=vel
         redshift_central=redshift
-    のように渡す。
 
     Returns
     -------
@@ -264,18 +263,13 @@ def flatten_and_mask_generated(generated, mask, **central_fields):
 
     # Repeat, flatten, and mask central fields
     for name, arr in central_fields.items():
-        arr = np.asarray(arr)
+        if arr is None:
+            out[name] = None
+        else:
+            arr_repeated = np.repeat(arr[:, None, ...], seq_length, axis=1)
+            arr_flat = arr_repeated.reshape(num_halos * seq_length, *arr.shape[1:])
+            arr_flat = arr_flat[flat_mask]
 
-        if arr.shape[0] != num_halos:
-            raise ValueError(
-                f"{name}.shape[0] must be num_halos={num_halos}, "
-                f"but got {arr.shape[0]}"
-            )
-
-        arr_repeated = np.repeat(arr[:, None, ...], seq_length, axis=1)
-        arr_flat = arr_repeated.reshape(num_halos * seq_length, *arr.shape[1:])
-        arr_flat = arr_flat[flat_mask]
-
-        out[name] = arr_flat
+            out[name] = arr_flat
 
     return out

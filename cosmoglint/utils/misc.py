@@ -12,6 +12,16 @@ def get_index_list(features, key_prefix, n=3):
     idx_lst = [ safe_index(features, f"{key_prefix}:{i}") for i in range(n)]
     return idx_lst
 
+
+def get_feature_values(data, feature_list, feature):
+    try:
+        idx = feature_list.index(feature)
+        res = data[...,idx]
+    except ValueError:
+        res = None
+    return res
+
+
 def namespace_to_dict(ns):
     if isinstance(ns, Namespace):
         return {k: namespace_to_dict(v) for k, v in vars(ns).items()}

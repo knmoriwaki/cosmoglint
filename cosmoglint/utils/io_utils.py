@@ -9,7 +9,13 @@ from collections import defaultdict
 # Save functions
 # ============================================================
 
-def save_hdf5_catalog_data(data, args, output_features, output_fname):
+def save_hdf5_catalog_data(
+    data, 
+    args, 
+    output_features, 
+    output_fname
+):
+
     args_dict = vars(args)
     args_dict = {k: (v if v is not None else "None") for k, v in args_dict.items()}
 
@@ -30,12 +36,18 @@ def save_hdf5_catalog_data(data, args, output_features, output_fname):
 
     print(f"# Catalog saved to {output_fname}")
 
-def save_hdf5_intensity_data(intensity, args, output_features, output_fname):
-    args_dict = vars(args)
-    args_dict = {k: (v if v is not None else "None") for k, v in args_dict.items()}
+def save_hdf5_intensity_data(
+    intensity, 
+    args, 
+    output_features, 
+    output_fname
+):
 
     if not isinstance(intensity, list):
         intensity = [intensity]
+
+    args_dict = vars(args)
+    args_dict = {k: (v if v is not None else "None") for k, v in args_dict.items()}
     
     with h5py.File(output_fname, 'w') as f:
 
@@ -53,12 +65,12 @@ def save_hdf5_intensity_data(intensity, args, output_features, output_fname):
 # ============================================================
 
 def normalize(
-        x, 
-        key, 
-        norm_param_dict, 
-        inverse=False, 
-        convert=True
-    ):
+    x, 
+    key, 
+    norm_param_dict, 
+    inverse=False, 
+    convert=True
+):
     """
     x: array-like
     key: str
@@ -118,14 +130,14 @@ def inverse_convert_to_log_with_sign(val):
     return np.sign(val) * ( 10 ** np.abs( val ) - 1 )
 
 # ============================================================
-# Load values from hdf5 file f
+# Load values from hdf5 file
 # ============================================================
 
 def load_values(
-        f, 
-        key, 
-        norm_param_dict=None
-    ):
+    f, 
+    key, 
+    norm_param_dict=None
+):
 
     if key not in f:
         raise ValueError(f"Key '{key}' not found in the file.")
@@ -137,10 +149,10 @@ def load_values(
         return normalize(data, key, norm_param_dict)
     
 def load_header_values(
-        f, 
-        key, 
-        norm_param_dict=None
-    ):
+    f, 
+    key, 
+    norm_param_dict=None
+):
     
     if "Header" in f and key in f["Header"].attrs:
         data = f["Header"].attrs[key]
@@ -160,44 +172,54 @@ def load_header_values(
 # ============================================================
 
 def load_global_params(
-        global_param_file, 
-        global_features, 
-        norm_param_dict=None
-        ):
+    global_param_file, 
+    global_features, 
+    norm_param_dict=None
+):
+    """
+    Load global parameters from ascii file 
+
+    Input:
+        global_param_file: Path to the ASCII file containing the data.
+        global_features: List of feature names (e.g., ["Omega0"])
+        norm_param_dict: Normalization parameters, if None, normalization is not applied.
+
+    Return:
+        global_params: np.ndarray, shape (ndata, len(global_features))
+    """
 
     if global_features is None:
         return None
 
-    else:
-        if global_param_file is None:
-            return None
-        
-        if not isinstance(global_param_file, list):
-            global_param_file = [global_param_file]
+    if global_param_file is None:
+        return None
+    
+    if not isinstance(global_param_file, list):
+        global_param_file = [global_param_file]
 
-        global_params = []
-        for f in global_param_file:
-            data = np.genfromtxt(f, names=True, dtype=None, encoding="utf-8")
-            data = np.atleast_1d(data)
+    global_params = []
+    for f in global_param_file:
+        data = np.genfromtxt(f, names=True, dtype=None, encoding="utf-8")
+        data = np.atleast_1d(data)
 
-            global_params_now = []
-            for name in global_features:
-                if name in data.dtype.names:
-                    values = data[name]
-                else:
-                    values = np.full(len(data), np.nan) # This not-found value will be replaced by the parameter obtained in data file. If not, ValueError will be raised.
+        global_params_now = []
+        for name in global_features:
+            if name in data.dtype.names:
+                values = data[name]
+            else:
+                values = np.full(len(data), np.nan) # This not-found value will be replaced by the parameter obtained in data file. If not, ValueError will be raised.
 
-                global_params_now.append(values)
+            global_params_now.append(values)
 
-            global_params_now = np.vstack(global_params_now).T.astype(np.float32)
-            global_params.append(global_params_now)
+        global_params_now = np.vstack(global_params_now).T.astype(np.float32)
+        global_params.append(global_params_now)
 
-        global_params = np.vstack(global_params)
+    global_params = np.vstack(global_params)
 
-        for i, key in enumerate(global_features):
-            values = global_params[...,i]
-            valid = ~np.isnan(values)
-            global_params[valid,i] = normalize(values[valid], key, norm_param_dict)        
+    for i, key in enumerate(global_features):
+        values = global_params[...,i]
+        valid = ~np.isnan(values)
+        global_params[valid,i] = normalize(values[valid], key, norm_param_dict)        
 
     return global_params # (ndata, num_features_global)
 
@@ -206,14 +228,20 @@ def load_global_params(
 # ============================================================
 
 def load_mesh_data(
-        file_path, 
-        features,
-        norm_param_dict=None
-    ):
+    file_path, 
+    features,
+    norm_param_dict=None
+):
     """
+    Load mesh data from hdf5 file
+
     Input:
         file_path: Path to the HDF5 file containing the data.
+        features: List of feature names (e.g., ["dm_density"])
         norm_param_dict: Normalization parameters, if None, normalization is not applied.
+
+    Return:
+        source: np.ndarray, shape (npix, npix, npix, len(features))
     """
         
     print("# Input file (mesh): {}".format(file_path))
@@ -237,11 +265,18 @@ def load_mesh_data(
 # ============================================================
 
 def load_galaxy_data(
-        file_path, 
-        features, 
-        global_features=None, 
-        norm_param_dict=None
-    ):
+    file_path, 
+    features, 
+    global_features=None, 
+    norm_param_dict=None
+):
+    """
+    Input:
+        file_path: Path to the HDF5 file containing the data.
+        features: List of feature names (e.g., ["dm_density"])
+        norm_param_dict: Normalization parameters, if None, normalization is not applied.
+    """
+
     key_to_indices = defaultdict(list)
 
     for feat in features:

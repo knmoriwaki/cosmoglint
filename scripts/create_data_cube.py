@@ -18,7 +18,8 @@ cosmo = FlatLambdaCDM(H0=67.74, Om0=0.3089)
 import astropy.units as u
 
 from cosmoglint.utils.io_utils import save_hdf5_catalog_data, save_hdf5_intensity_data, load_global_params
-from cosmoglint.utils.misc import spherical_offsets_and_vz
+from cosmoglint.utils.misc import get_feature_values, spherical_offsets_and_vz
+from cosmoglint.sampling.from_halo import flatten_and_mask_generated
 
 cspeed = 3e10 # [cm/s]
 micron = 1e-4 # [cm]
@@ -99,8 +100,7 @@ def create_data(args):
     mass = mass[mask]
     cond = mass[:, None]
     pos = pos[mask]
-    if args.redshift_space:
-        vel = vel[mask]
+    vel = vel[mask] if args.redshift_space else None
 
     print(f"# Redshift: {redshift}")
 
@@ -145,44 +145,25 @@ def create_data(args):
                 )
 
         ### flatten and mask
-        if args.redshift_space:
-            out = flatten_and_mask_generated(generated, mask, pos_central=pos, vel_central=vel)
-        else:
-            out = flatten_and_mask_generated(generated, mask, pos_central=pos)
+        out = flatten_and_mask_generated(generated, mask, pos_central=pos, vel_central=vel)
 
         generated = out["generated"]
         pos_central = out["pos_central"]
         flag_central = out["flag_central"]
-        if args.redshift_space:
-            vel_central = out["vel_central"]
+        vel_central = out["vel_central"] if args.redshift_space else None
 
         ### Add spherical offset and redshift-space distortion
         with open("{}/args.json".format(args.model_dir), "r") as f:
             opt = json.load(f, object_hook=lambda d: argparse.Namespace(**d))
 
-        i_dist = opt.output_features.index("SubhaloDist")
-        distance = generated[:,i_dist]
-
-        if args.redshift_space:
-            i_vr = opt.output_features.index("SubhaloVrad")
-            i_vt = opt.output_features.index("SubhaloVtan")
-            offset, vz = spherical_offsets_and_vz(
-                distance, 
-                vr = generated[:,i_vr], 
-                vt = generated[:,i_vt], 
-                flag_central=flag_central
-            )
-
-            pos_galaxies = pos_central + offset
-            pos_galaxies_real = copy.deepcopy(pos_galaxies) 
-
-            pos_galaxies[:,2] += ( vel_central[:,2] + vz ) * rsd_factor(redshift)
-            pos_list = [pos_galaxies_real, pos_galaxies]
-
-        else:
-            offset, _ = spherical_offsets_and_vz(distance)
-            pos_galaxies = pos_central + offset
-            pos_list = [pos_galaxies]
+        pos_list, vz = add_spherical_offset_and_rsd(
+            generated = generated,
+            pos_central = pos_central,
+            vel_central = vel_central,
+            flag_central = flag_central,
+            output_features = opt.output_features,
+            redshift_space = args.redshift_space
+        )
 
         ### Save
         sfr = generated[:,0]
@@ -200,12 +181,14 @@ def create_data(args):
 
         if args.output_catalog_fname is not None:
             print("# Generate catalog of galaxies")
-            
-            data = [pos_galaxies_real[:,0], pos_galaxies_real[:,1], pos_galaxies_real[:,2], sfr]
+            pos = pos_list[0]
+            data = [pos[:,0], pos[:,1], pos[:,2], sfr]
             output_features = ["SubhaloPos", "SubhaloPos", "SubhaloPos", "SubhaloSFR"]
+            
             if args.redshift_space:
-                data.append( vel_central[:,2] + vz_gal )
+                data.append( vel_central[:,2] + vz )
                 output_features.append( "SubhaloVelZ" )
+                
             data = np.stack(data, axis=0)
             mask = sfr > args.catalog_threshold
 
@@ -239,6 +222,36 @@ def create_data(args):
         keys = ["intensity", "intensity_rsd"]
         save_hdf5_intensity_data(intensities, args, keys, args.output_fname)
 
+def add_spherical_offset_and_rsd(
+    generated, 
+    pos_central,
+    vel_central,
+    flag_central,
+    redshift,
+    output_features = [],
+    redshift_space = False
+):
+    distance = get_feature_values(generated, output_features, "SubhaloDist")
+    vr = get_feature_values(generated, output_features, "SubhaloVrad")
+    vt = get_feature_values(generated, output_features, "SubhaloVtan")
+
+    offset, vz = spherical_offsets_and_vz(
+        distance, 
+        vr = vr,
+        vt = vt,
+        flag_central=flag_central
+    )
+
+    pos_galaxies = pos_central + offset
+        
+    if redshift_space:
+        pos_galaxies_real = copy.deepcopy(pos_galaxies) 
+        pos_galaxies[:,2] += ( vel_central[:,2] + vz ) * rsd_factor(redshift)
+        pos_list = [pos_galaxies_real, pos_galaxies]
+    else:
+        pos_list = [pos_galaxies]
+
+    return pos_list, vz
 
 def get_z_m_p_v_s(input_fname):
     print(f"# Load {input_fname}")
