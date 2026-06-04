@@ -35,24 +35,33 @@ def create_mask(array, threshold):
 
     return mask
 
-def sample_galaxies(args, x_in, global_params=None, verbose=True):
+def sample_galaxies(
+        model_dir,
+        x_in, 
+        global_params = None, 
+        batch_size = None,
+        model_label = "",
+        threshold = 1e-5,
+        max_sfr_file = None,
+        verbose = True,
+        device = "cpu",
+        **kwargs
+    ):
     """
-    args: args.gpu_id, args.model_dir, args.threshold, and args.max_sfr_file are used
     x_in: (num_halos, num_features_in); halo properties
     """
 
     print("# Use Transformer to generate SFR")
 
     from cosmoglint.model.transformer import transformer_model
-    device = torch.device("cuda:{}".format(args.gpu_id) if torch.cuda.is_available() else "cpu")
 
     ### load Transformer
-    with open("{}/args.json".format(args.model_dir), "r") as f:
+    with open("{}/args.json".format(model_dir), "r") as f:
         opt = json.load(f, object_hook=lambda d: argparse.Namespace(**d))
         opt.norm_param_dict = namespace_to_dict(opt.norm_param_dict)
 
     model = transformer_model(opt)
-    model.load_state_dict(torch.load("{}/model{}.pth".format(args.model_dir, args.model_label), map_location="cpu"))
+    model.load_state_dict(torch.load("{}/model{}.pth".format(model_dir, model_label), map_location="cpu"))
     model.to(device)
     model.eval()
     
@@ -61,7 +70,8 @@ def sample_galaxies(args, x_in, global_params=None, verbose=True):
         print(model)
 
     ### Format input data
-    print("# Generate galaxies (batch size: {:d})".format(opt.batch_size))
+    batch_size = batch_size or opt.batch_size
+    print("# Generate galaxies (batch size: {:d})".format(batch_size))
     for i, key in enumerate(opt.input_features):
         x_in[...,i] = normalize(x_in[...,i], key, opt.norm_param_dict)
     x_in = torch.from_numpy(x_in).float().to(device)
@@ -71,25 +81,34 @@ def sample_galaxies(args, x_in, global_params=None, verbose=True):
             global_params[i] = normalize(global_params[i], key, opt.norm_param_dict)
         global_params = torch.from_numpy(global_params).float().to(device)
 
-    if args.max_sfr_file is None:
+    if max_sfr_file is None:
         print("# No max SFR file provided, using default max IDs")
         max_ids = None
     else:
-        max_ids = np.loadtxt(args.max_sfr_file)
+        max_ids = np.loadtxt(max_sfr_file)
         max_ids = ( max_ids * opt.num_features_out ).astype(int)
         max_ids = torch.tensor(max_ids).to(device) # (num_features, )
     
     ### Generate galaxies
-    num_batch = (len(x_in) + opt.batch_size - 1) // opt.batch_size
-    stop_criterion = normalize(args.threshold, opt.output_features[0], opt.norm_param_dict) # stop criterion for SFR
+    num_batch = (len(x_in) + batch_size - 1) // batch_size
+    stop_criterion = normalize(threshold, opt.output_features[0], opt.norm_param_dict) # stop criterion for SFR
     
     generated = []
     for batch_idx in tqdm(range(num_batch)):
-        start = batch_idx * opt.batch_size 
-        x_batch = x_in[start: start + opt.batch_size] # (batch_size, num_features)
+        
+        start = batch_idx * batch_size 
+        x_batch = x_in[start: start + batch_size] # (batch_size, num_features)
         global_cond_batch = global_params.unsqueeze(0).repeat(len(x_batch), 1) if global_params is not None else None # (batch_size, num_global_features)
+
         with torch.no_grad():
-            generated_batch, _ = model.generate(x_batch, global_cond=global_cond_batch, prob_threshold=1e-5, stop_criterion=stop_criterion, max_ids=max_ids, monotonicity_start_index=args.monotonicity_start_index) # (batch_size, seq_length, num_features)
+
+            generated_batch, _ = model.generate(
+                x_batch, 
+                global_cond=global_cond_batch, 
+                stop_criterion=stop_criterion, 
+                max_ids=max_ids, 
+                **kwargs
+                ) # (batch_size, seq_length, num_features)
             
         generated.append(generated_batch.cpu().detach().numpy())
         
@@ -108,30 +127,37 @@ def sample_galaxies(args, x_in, global_params=None, verbose=True):
     
     return generated, mask
 
-def sample_galaxies_TransNF(args, x_in, global_params=None, verbose=True):
+def sample_galaxies_TransNF(
+        model_dir,
+        x_in, 
+        global_params = None, 
+        batch_size = None,
+        model_label = "",
+        threshold = 1e-5,
+        verbose = True,
+        device = "cpu",
+        **kwargs
+    ):
     """
-    args: args.gpu_id, args.model_dir, and args.threshold are used
     x_in: (num_halos, num_features_in), halo properties
     """
 
     print("# Use Transformer-NF to generate galaxies")
 
     from cosmoglint.model.transformer_nf import transformer_nf_model, generate_with_transformer_nf
-    device = torch.device("cuda:{}".format(args.gpu_id) if torch.cuda.is_available() else "cpu")
-    print("Using device: ", device)
-
+    
     ### load Transformer
-    with open("{}/args.json".format(args.model_dir), "r") as f:
+    with open("{}/args.json".format(model_dir), "r") as f:
         opt = json.load(f, object_hook=lambda d: argparse.Namespace(**d))
         opt.norm_param_dict = namespace_to_dict(opt.norm_param_dict)
 
     model, flow = transformer_nf_model(opt)
 
-    model.load_state_dict(torch.load("{}/model{}.pth".format(args.model_dir, args.model_label), map_location="cpu"))
+    model.load_state_dict(torch.load("{}/model{}.pth".format(model_dir, model_label), map_location="cpu"))
     model.to(device)
     model.eval()
     
-    flow.load_state_dict(torch.load("{}/flow{}.pth".format(args.model_dir, args.model_label), map_location="cpu"))
+    flow.load_state_dict(torch.load("{}/flow{}.pth".format(model_dir, model_label), map_location="cpu"))
     flow.to(device)
     flow.eval()
 
@@ -141,7 +167,8 @@ def sample_galaxies_TransNF(args, x_in, global_params=None, verbose=True):
         print(flow)
 
     ### generate galaxies
-    print("# Generate galaxies (batch size: {:d})".format(opt.batch_size))
+    batch_size = batch_size or opt.batch_size
+    print("# Generate galaxies (batch size: {:d})".format(batch_size))
     
     for i, key in enumerate(opt.input_features):
         x_in[...,i] = normalize(x_in[...,i], key, opt.norm_param_dict)
@@ -152,18 +179,28 @@ def sample_galaxies_TransNF(args, x_in, global_params=None, verbose=True):
             global_params[i] = normalize(global_params[i], key, opt.norm_param_dict)
         global_params = torch.from_numpy(global_params).float().to(device)
     
-    num_batch = (len(x_in) + opt.batch_size - 1) // opt.batch_size
+    num_batch = (len(x_in) + batch_size - 1) // batch_size
     generated = []
     def stop_criterion(sample):
         # sample: (batch, num_features)
         return (sample[:, 0] < 1).all()
     
     for batch_idx in tqdm(range(num_batch)):
-        start = batch_idx * opt.batch_size 
-        x_batch = x_in[start: start + opt.batch_size] # (batch_size, 1)
+        start = batch_idx * batch_size 
+        x_batch = x_in[start: start + batch_size] # (batch_size, 1)
         global_cond_batch = global_params.unsqueeze(0).repeat(len(x_batch), 1) if global_params is not None else None
-        generated_batch = generate_with_transformer_nf(model, flow, x_batch, global_cond=global_cond_batch, stop_criterion=stop_criterion) # (batch_size, max_length, num_features)
+        
+        generated_batch = generate_with_transformer_nf(
+            model, 
+            flow, 
+            x_batch, 
+            global_cond=global_cond_batch, 
+            stop_criterion=stop_criterion, 
+            **kwargs
+        ) # (batch_size, max_length, num_features)
+
         generated.append(generated_batch.cpu().detach().numpy())
+
     generated = torch.cat(generated, dim=0) # (num_halos, max_length, num_features) or (num_halos, max_length * num_features, 1)
      
     # De-normalize
@@ -172,7 +209,7 @@ def sample_galaxies_TransNF(args, x_in, global_params=None, verbose=True):
 
     # Set mask for selection
     sfr = generated[...,0]
-    mask = create_mask(sfr, args.threshold) # (num_halos, seq_length)   
+    mask = create_mask(sfr, threshold) # (num_halos, seq_length)   
     
     print("# Number of valid galaxies: {:d}".format(len(generated)))
     

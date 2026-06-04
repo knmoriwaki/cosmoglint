@@ -56,10 +56,11 @@ def parse_args():
     ### Generative model parameters
     parser.add_argument("--model_dir", type=str, default=None, help="The directory of the model. If not given, use 7th column as intensity.")
     parser.add_argument("--model_label", type=str, default="", help="Model label (e.g., _ep100)")
+    parser.add_argument("--batch_size", type=int, default=None, help="Batch size. If not given, the size used in training wil be used.")
 
-    parser.add_argument("--prob_threshold", type=float, default=1e-5, help="Below this probability, the galaxy is not generated.")
     parser.add_argument("--max_sfr_file", type=str, default=None, help="File containing maximum IDs for SFR.")
     parser.add_argument("--monotonicity_start_index", type=int, default=1)
+    parser.add_argument("--prob_threshold", type=float, default=1e-5, help="Below this probability, the galaxy is not generated.")
 
     return parser.parse_args()
 
@@ -105,7 +106,6 @@ def create_data(args):
             redshift = f["Header"].attrs["Redshift"]
             mass = f["Group/GroupMass"][:] # [1e10 Msun/h]
             pos = f["Group/GroupPos"][:] # [kpc/h]
-            print(args.redshift_space)
             if args.redshift_space:
                 vel = f["Group/GroupVel"][:] # [km/s]
 
@@ -151,7 +151,8 @@ def create_data(args):
     mass = mass[mask]
     cond = mass[:, None]
     pos = pos[mask]
-    vel = vel[mask]
+    if args.redshift_space:
+        vel = vel[mask]
 
     print(f"# Redshift: {redshift}")
     import astropy.units as u
@@ -203,6 +204,9 @@ def create_data(args):
 
 
     else:
+        device = torch.device("cuda:{}".format(args.gpu_id) if torch.cuda.is_available() else "cpu")
+        print("Using device: ", device)
+
         ### Load global parameters
         with open("{}/args.json".format(args.model_dir), "r") as f:
             opt = json.load(f, object_hook=lambda d: argparse.Namespace(**d))
@@ -214,10 +218,29 @@ def create_data(args):
 
         if "transformer_nf" in args.model_dir:
             from cosmoglint.sampling import sample_galaxies_TransNF
-            generated, mask = sample_galaxies_TransNF(args, cond, global_params=global_params)
+            generated, mask = sample_galaxies_TransNF(
+                model_dir = args.model_dir,
+                x_in = cond, 
+                global_params = global_params, 
+                batch_size = args.batch_size,
+                model_label = args.model_label,
+                threshold = args.threshold,
+                device = device
+                )
         else:
             from cosmoglint.sampling import sample_galaxies
-            generated, mask = sample_galaxies(args, cond, global_params=global_params)
+            generated, mask = sample_galaxies(
+                model_dir = args.model_dir,
+                x_in = cond, 
+                global_params = global_params, 
+                batch_size = args.batch_size,
+                model_label = args.model_label,
+                threshold = args.threshold,
+                max_sfr_file = args.max_sfr_file,
+                monotonicity_start_index = args.monotonicity_start_index,
+                prob_threshold = args.prob_threshold,
+                device = device
+                )
 
         seq_length = mask.shape[1]
         num_features = generated.shape[-1]
