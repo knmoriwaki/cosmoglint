@@ -4,11 +4,12 @@
 
 This repository includes:
 
-- A package of Transformer-based models that generate galaxy properties from halo mass.
+- A package of Transformer-based models that generate galaxy properties from halo properties of density map.
 - Scripts for training and mock catalog generation.
 - Example notebooks for result visualization.
 
 ~~Models trained with TNG300-1 at z = 0.5 - 6 and generated data are available at [Google Drive](https://drive.google.com/drive/folders/1IFje9tNRf4Dr3NufqzlDdGMFTEDpsm35?usp=share_link).~~
+
 Pre-trained model for the new version will be provided soon.
 
 ---
@@ -38,44 +39,66 @@ If you only need the `cosmoglint` package (e.g., to import it in your own code),
 pip install git+https://github.com/knmoriwaki/cosmoglint.git
 ```
 
+To use scripts and notebooks, install additional libraries:
+```bash
+pip install -r requirements.txt
+```
+
+
 ## Model Usage
 
-Load model:
+### Load model:
 ```python
-import json
 from cosmoglint.model.transformer import Transformer1
 
-cfg = {"max_length": 50, "d_model": 128, "num_layers": 4, "num_heads": 8, "num_features_cond": 1, "num_features_in": 4, "num_features_out": 100}
+cfg = {
+  "max_length": 50, 
+  "d_model": 128, 
+  "num_layers": 4, 
+  "num_heads": 8, 
+  "num_features_cond": 1, 
+  "num_features_in": 4, 
+  "num_features_out": 100
+}
+
 model = Transformer1(**cfg)
 ```
 
-Predict probability:
+### Predict probability:
 ```python
 prob = model(condition, seq) 
 ```
 
-Generate new galaxies:
+### Generate new galaxies:
 ```python
 generated, prob = model.generate(condition, seq=seq, prob_threshold=1e-5)
 ```
 
-Input:
-- `condition`: a tensor of shape `(B, C_h)`, containing the properties of halo. 
+### Input:
+- `condition`: Conditioning input passed to the model. The shape of `condition` depends on the model being used. See the [Models](#models) section below for details.
 - `seq`: a tensor of shape `(B, L, C_g)`, containing the properties of up to `L` galaxies for each of the `N` halos in the batch. Each feature vector of size `C_g` may include, for example, the halo mass, relative distance to the halo center, radial velocity, and tangential velocity. Set to `None` to generate galaxies from scratch.
 - `prob_threshold` (optional): when sampling, the probability below this threshold is set to zero.
 
-Output:
+### Output:
 - `prob`: a tensor of shape `(B, L, C_g, d)`. `prob[i,j,k,:]` is the probability distribution over `d` bins for the k-th parameter of the **(j+1)-th galaxy** in the sequence for the i-th batch element. 
 - `generated`: a tensor of shape `(B, L, C_g)`. `generated[i,j,k]` is the sampled values for each parameter of **(j+1)-th galaxy** in the sequence for the i-th batch element.
 
-Shape: 
+### Shape: 
 - `B`: Batch size 
 - `L`: Sequence length 
 - `C_h`: Number of halo properties 
 - `C_g`: Number of galaxy properties predicted 
 - `d`: Number of bins for the probability distribution of each parameter
 
-Options:
+### Models:
+| Class                    | Description                                                                                                                                                                |
+|------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **`Transformer1`**       | halo is prepended to the sequence. `condition` should be a tensor of shape `(B, C_h)`, containing the halo properties.  |
+| **`Transformer2`** | halo and galaxy features are embedded together. `condition` should be a tensor of shape `(B, C_h)`, containing the halo properties. |
+| **`MeshConditionedTransformer`** | 3d mesh data is encoded in a sequence and decoded with the target sequence. `condition` should be a tensor of shape `(B, C_h, N, N, N)` |
+| **`MeshSequenceConditionedTransformer`** |  3d mesh and context sequence data is encoded in a sequence and decoded with the target sequence. `condition` should be a dict including "mesh" `(B, C_h, N, N, N)`, "context" `(B, L_ctx, C_g)`, "mask_ctx" `(B, L_ctx)`, "boundary" `(B, 6)`. |
+
+### Options:
 | Key                    | Description                                                                                                                                                                |
 |------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | **`max_length`**       | Maximum number of galaxies (sequence length) the model will process per halo.|
@@ -86,25 +109,12 @@ Options:
 | **`num_features_out`** | Total number of output bins for the probability distribution.  |
 | **`num_features_in`**  | Number of features per galaxy (e.g., SFR, relative distance, radial/tangential velocity).     |
 
-Models:
-| Class                    | Description                                                                                                                                                                |
-|------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **`Transformer1`**       | halo is prepended to the sequence |
-| **`Transformer2`** | halo and galaxy features are embedded together |
-| **`MeshConditionedTransformer`** | 3d mesh data is encoded in a sequence and decoded with the target sequence. `condition` should be a tensor of shape `(B, C_h, N, N, N)` |
-| **`MeshSequenceConditionedTransformer`** |  3d mesh and context sequence data is encoded in a sequence and decoded with the target sequence. `condition` should be a dict including "mesh" `(B, C_h, N, N, N)`, "context" `(B, L_ctx, C_g)`, "mask_ctx" `(B, L_ctx)`, "boundary" `(B, 6)`. |
-
-
 ---
 
 ## Scripts and notebook
 
 The scripts in `scripts` can be used for training and mock generation. Notebooks in `notebooks` can be used for visualization.
 
-To use scripts and notebooks, install additional libraries:
-```bash
-pip install -r requirements.txt
-```
 
 ### Training 
 
@@ -128,6 +138,9 @@ The config file is a YAML file that specifies the details of the dataset and the
 - `data_path_mesh`: Path(s) to the mesh data. Required when using "mesh_conditioned_transformer" or "mesh_sequence_conditioned_transformer".
 - `global_param_file`: Path to the global parameters file(s). The header should include `global_features`. (default: None)
 - `indices`: If the data path contains `*` (e.g., `.../run_*`), it will be expanded by replacing `*` with integers in the specified range (e.g., `0–999`).  
+- `input_features`: List of the input properties (default: `["GroupMass"]`)
+- `output_features`: List of the output properties (default: `["SubhaloSFR", "SubhaloDist", "SubhaloVrad", "SubhaloVtan"]`)
+- `global_features`: List of global properties. If not None, `global_param_file` should be provided (default: None)
 - `norm_param_file`: Path to the json file that specifies the normalization settings. Each key (e.g., `GroupMass`) maps to a dictionary with `min` / `max` and `norm`. If `norm` is `"log"` or `"log_with_sign"`, the `min` / `max` normalization is applied after the log conversion.
 Example `norm_param_file`:
 
@@ -145,10 +158,6 @@ Example `norm_param_file`:
     }
   }
   ```
-
-- `input_features`: List of the input properties (default: `["GroupMass"]`)
-- `output_features`: List of the output properties (default: `["SubhaloSFR", "SubhaloDist", "SubhaloVrad", "SubhaloVtan"]`)
-- `global_features`: List of global properties. If not None, `global_param_file` should be provided (default: None)
 - `max_length`: Maximum number of galaxies (sequence length) per halo (default: 30).
 - `use_flat_representation`: If true, use flattened point features (B, N * M). If false, keep (B, N, M). Set this to `true` when you want to model correlations among multiple parameters. (default: false)
 

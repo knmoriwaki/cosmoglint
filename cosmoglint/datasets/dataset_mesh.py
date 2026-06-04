@@ -111,7 +111,6 @@ def get_random_patches(
 class MeshDatasetBase(Dataset):
     """
     Base class for Mesh Dataset. 
-
     """
     def __init__(
         self, 
@@ -125,7 +124,6 @@ class MeshDatasetBase(Dataset):
         max_length = 100,
         npix_patch = 16,
         ndata = 1000,
-        use_flat_representation = False,
         sort=True, 
         exclude_ratio=0,
         use_excluded_region=False,
@@ -145,6 +143,7 @@ class MeshDatasetBase(Dataset):
         self.g = []
 
         for i, (p, p_dm) in enumerate(zip(data_path, data_path_mesh)):
+
             dm_density, pixel_size = load_mesh_data(
                 file_path = p_dm, 
                 features = input_features, 
@@ -156,6 +155,7 @@ class MeshDatasetBase(Dataset):
                 global_features = global_features, 
                 norm_param_dict = norm_param_dict
             )
+
             x_tmp, y_tmp = get_random_patches(
                 dm_density, 
                 gal_data, 

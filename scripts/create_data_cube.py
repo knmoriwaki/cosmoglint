@@ -200,7 +200,7 @@ def create_data(args):
                 pos_valid = p[valid_mask]
                 value_valid = value[valid_mask]
 
-            my_save_catalog_data(pos_valid, value_valid, args, ["SubhaloSFR"], args.output_catalog_fname)
+            my_save_catalog_data(pos_valid, value_valid, args, args.output_catalog_fname)
 
 
     else:
@@ -254,13 +254,15 @@ def create_data(args):
         mask = mask.reshape(-1) # (num_halos * seq_length, )
         generated = generated.reshape(-1, num_features) # (num_halos * seq_length, num_features)
         pos_central = np.repeat(pos[:,None,:], seq_length, axis=1).reshape(-1, 3) # (num_halos * seq_length, 3)
-        vel_central = np.repeat(vel[:,None,:], seq_length, axis=1).reshape(-1, 3) # (num_halos * seq_length, 3)
+        if args.redshift_space:
+            vel_central = np.repeat(vel[:,None,:], seq_length, axis=1).reshape(-1, 3) # (num_halos * seq_length, 3)
         flag_central = flag_central.reshape(-1) # (num_halos * seq_length, )
 
         ### Apply mask to arrays
         generated = generated[mask] # (num_galaxies_valid, num_features)
         pos_central = pos_central[mask] # (num_galaxies_valid, 3)
-        vel_central = vel_central[mask] # (num_galaxies_valid, 3)
+        if args.redshift_space:
+            vel_central = vel_central[mask] # (num_galaxies_valid, 3)
         flag_central = flag_central[mask] # (num_galaxies_valid, )
 
         ### Distribute galaxies in cube
@@ -327,7 +329,8 @@ def create_data(args):
                 valid_mask = sfr > args.catalog_threshold
                 pos_valid.append(pos[valid_mask])
                 sfr_valid = sfr[valid_mask]
-            my_save_catalog_data(pos_valid, sfr_valid, args, opt.output_features, args.output_catalog_fname)
+            
+            my_save_catalog_data(pos_valid, sfr_valid, args, args.output_catalog_fname)
 
 
 
