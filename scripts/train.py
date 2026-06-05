@@ -246,11 +246,11 @@ def my_load_data(args):
        "input_features": args.input_features,
        "output_features": args.output_features,
        "global_features": args.global_features,
+       "global_params": global_params,
        "norm_param_dict": norm_param_dict,
        "max_length": args.max_length,
        "ndata": args.ndata,
        "use_flat_representation": args.use_flat_representation,
-       "global_params": global_params,
        "exclude_ratio": args.exclude_ratio,
        "show_pbar": args.show_pbar
     }

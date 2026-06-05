@@ -6,10 +6,10 @@ output_dir=../data/mesh/generated_data
 mkdir -p $output_dir
 
 snapshot_number=33
-run_name=transformer_${snapshot_number}_ep500_bs256_w1
+run_name=transformer_mesh_${snapshot_number}_ep500_bs256_w1
 npix_to_use=128
 
-model_dir=./runs/output_transformer_mesh/${run_name}
+model_dir=./runs/${run_name}
 model_label=_ep300
 
 input_fname=../data/mesh/TNG300-3-Dark/TNG300-3-Dark_dm_33_keep0.10_npix256.h5

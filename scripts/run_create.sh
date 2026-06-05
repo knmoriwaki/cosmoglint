@@ -12,7 +12,7 @@ mkdir -p $output_dir
 snapshot_number=33
 
 model_name=transformer1
-model_dir=./runs/output_transformer/${model_name}_${snapshot_number}_ep40_bs512_w0.02
+model_dir=./runs/${model_name}_${snapshot_number}_ep40_bs512_w0.02
 max_sfr_file=../data/halo/param_files/max_nbin20_${snapshot_number}.txt
 
 seed=0

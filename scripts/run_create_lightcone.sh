@@ -15,7 +15,7 @@ dz=0.001
 output_dir=../data/halo/generated_data_lightcone
 mkdir -p $output_dir
 
-model_dir=../scripts/runs/output_transformer
+model_dir=../scripts/runs
 
 irun=1
 irun_id=$(printf "%05d" $irun)

@@ -274,7 +274,7 @@ def get_z_m_p_v_s(input_fname):
         match = re.search(r'pinocchio\.([0-9]+\.[0-9]+)', input_fname)
         redshift = float(match.group(1))
             
-        import ReadPinocchio5 as rp
+        import helpers.ReadPinocchio5 as rp
         mycat = rp.catalog(input_fname)
         
         mass = mycat.data["Mass"] / 1e10 # [1e10 Msun/h]

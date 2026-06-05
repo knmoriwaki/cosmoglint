@@ -218,7 +218,7 @@ def create_lightcone(args):
         
         ### Generate line intensity map ###
 
-        from line_intensity_map import create_and_save_line_intensity_map
+        from helpers.line_intensity_map import create_and_save_line_intensity_map
         i_sfr = opt.output_features.index("SubhaloSFR")
         log_sfr = np.log10( generated[:,i_sfr] )
         create_and_save_line_intensity_map(
@@ -304,7 +304,7 @@ def load_lightcone_data(input_fname, cosmo):
             M, theta, phi, _, redshift_obs, redshift_real = load_old_plc(input_fname)
             mass = M
         else:
-            import ReadPinocchio5 as rp
+            import helpers.ReadPinocchio5 as rp
             myplc = rp.plc(input_fname)
             
             mass = myplc.data["Mass"] 

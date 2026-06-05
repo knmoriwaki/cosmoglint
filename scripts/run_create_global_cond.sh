@@ -11,7 +11,7 @@ mkdir -p $output_dir
 snapshot_number=44
 snapshot_number_TNG=33
 model_name=transformer_global_cond_${snapshot_number}_ep40_bs512_w0.02
-model_dir=./runs/output_transformer/${model_name}
+model_dir=./runs/${model_name}
 #max_sfr_file=../dataset/param_files/max_nbin20_${snapshot_number}.txt
 
 ### Create from TNG halo ###
