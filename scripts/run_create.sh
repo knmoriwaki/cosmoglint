@@ -18,9 +18,10 @@ model_dir=./runs/${model_name}
 seed=0
 while [ $seed -lt 1 ]
 do
-    for global_param_id in 0 1 2
+    global_param_id=0
+    while [ $global_param_id -lt 44 ]
     do
-        global_param_file=./params.txt
+        global_param_file=${base_dir}/TNG300-1/params.txt
         
         input_fname=${base_dir}/TNG300-1/TNG300-1_${snapshot_number_TNG}.h5
 
