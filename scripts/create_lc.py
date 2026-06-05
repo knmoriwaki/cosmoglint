@@ -68,7 +68,7 @@ def parse_args():
 
     ### Generative model parameters
     parser.add_argument("--model_dir", type=str, default=None, help="The directory of the model.")
-    parser.add_argument("--model_config_file", type=str, default="model_config.json", help="The configuration file for the model")
+    parser.add_argument("--model_config_file", type=str, default="../configs/lightcone_config.json", help="The configuration file for the model")
     parser.add_argument("--param_dir", type=str, default=None, help="The directory of the parameter files")
 
     return parser.parse_args()

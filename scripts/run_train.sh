@@ -8,7 +8,7 @@ config_label= # fiducial
 #config_label=_global_cond_${snapshot_number} # training with global condition
 #config_label=_nf_33 # transformer+nf model
 
-config_file=./configs/config${config_label}.yaml
+config_file=../configs/config${config_label}.yaml
 
 batch_size=128
 for sampler_weight_min in 0.02 #0.05 0.01
