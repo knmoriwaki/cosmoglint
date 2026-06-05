@@ -6,7 +6,7 @@ import h5py
 from collections import defaultdict
 
 # ============================================================
-# Save functions
+# Save 
 # ============================================================
 
 def save_hdf5_data(
@@ -15,6 +15,8 @@ def save_hdf5_data(
     fname,
     args = None,
 ):
+    
+    key_list = key_list[:len(data_list)]
 
     groups = defaultdict(list)
     for i, name in enumerate(key_list):
@@ -23,7 +25,7 @@ def save_hdf5_data(
     # Save
     with h5py.File(fname, 'w') as f:
         for key, idxs in groups.items():
-            arr = data_list[:, idxs]            
+            arr = np.stack( [data_list[idx] for idx in idxs], axis=-1 )            
             f.create_dataset(key, data=arr, compression="gzip")
 
         if args is not None:
@@ -132,7 +134,7 @@ def load_header_values(
     if "Header" in f and key in f["Header"].attrs:
         data = f["Header"].attrs[key]
 
-        if key is "Redshift":
+        if key == "Redshift":
             data += 0.1 * np.random.normal(0, 0.1) # Add scatter to learn intermediate redshifts
             
         if norm_param_dict is None:
