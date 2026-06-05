@@ -9,56 +9,31 @@ from collections import defaultdict
 # Save functions
 # ============================================================
 
-def save_hdf5_catalog_data(
-    data, 
-    args, 
-    output_features, 
-    output_fname
+def save_hdf5_data(
+    data_list, 
+    key_list, 
+    fname,
+    args = None,
 ):
 
-    args_dict = vars(args)
-    args_dict = {k: (v if v is not None else "None") for k, v in args_dict.items()}
-
-    from collections import defaultdict
     groups = defaultdict(list)
-    for i, name in enumerate(output_features):
-        prefix = name.split(":", 1)[0] 
-        groups[prefix].append(i)
+    for i, name in enumerate(key_list):
+        groups[name].append(i)
 
     # Save
-    with h5py.File(output_fname, 'w') as f:
+    with h5py.File(fname, 'w') as f:
         for key, idxs in groups.items():
-            arr = data[:, idxs]            
+            arr = data_list[:, idxs]            
             f.create_dataset(key, data=arr, compression="gzip")
 
-        for key, value in args_dict.items():
-            f.attrs[key] = value
+        if args is not None:
+            args_dict = vars(args)
+            args_dict = {k: (v if v is not None else "None") for k, v in args_dict.items()}
 
-    print(f"# Catalog saved to {output_fname}")
+            for key, value in args_dict.items():
+                f.attrs[key] = value
 
-def save_hdf5_intensity_data(
-    intensity, 
-    args, 
-    output_features, 
-    output_fname
-):
-
-    if not isinstance(intensity, list):
-        intensity = [intensity]
-
-    args_dict = vars(args)
-    args_dict = {k: (v if v is not None else "None") for k, v in args_dict.items()}
-    
-    with h5py.File(output_fname, 'w') as f:
-
-        for key, d in zip(output_features, intensity):
-            f.create_dataset(key, data=d)    
-
-        for key, value in args_dict.items():
-            f.attrs[key] = value
-
-    print(f"# Data cube saved as {output_fname}")
-
+    print(f"# Catalog saved to {fname}")
 
 # ============================================================
 # Normalization functions

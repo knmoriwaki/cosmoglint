@@ -18,7 +18,7 @@ cosmo = FlatLambdaCDM(H0=67.74, Om0=0.3089)
 import astropy.units as u
 
 from cosmoglint.utils import normalize, namespace_to_dict, get_index_list
-from cosmoglint.utils.io_utils import load_mesh_data, save_hdf5_intensity_data, save_hdf5_catalog_data
+from cosmoglint.utils.io_utils import load_mesh_data, save_hdf5_data
 from cosmoglint.sampling import sample_galaxies_from_mesh_continuous
 from cosmoglint.model.transformer import transformer_model
 
@@ -165,7 +165,13 @@ def create_data(args):
         valid_mask = val > catalog_threshold
         generated_valid = generated[valid_mask]
 
-        save_hdf5_catalog_data(generated_valid, args, opt.output_features, args.output_catalog_fname)
+        data_list = [ generated_valid[:,idx] for idx in range(generated_valid.shape[1])]
+        save_hdf5_data(
+            data_list = data_list, 
+            key_list = opt.output_features, 
+            fname = args.output_catalog_fname, 
+            args=args
+        )
         
     ### Save intensity map
     if args.output_fname is not None:
@@ -210,7 +216,12 @@ def create_data(args):
             intensities.append(intensity)
         keys = ["intensity", "intensity_rsd"]
 
-        save_hdf5_intensity_data(intensities, args, keys, args.output_fname)
+        save_hdf5_data(
+            data_list = intensities, 
+            key_list = keys, 
+            fname = args.output_fname,
+            args = args
+        )
 
 if __name__ == "__main__":
     args = parse_args()

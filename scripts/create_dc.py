@@ -17,7 +17,7 @@ from astropy.cosmology import FlatLambdaCDM
 cosmo = FlatLambdaCDM(H0=67.74, Om0=0.3089)
 import astropy.units as u
 
-from cosmoglint.utils.io_utils import save_hdf5_catalog_data, save_hdf5_intensity_data, load_global_params
+from cosmoglint.utils.io_utils import save_hdf5_data, load_global_params
 from cosmoglint.utils.misc import get_feature_values, spherical_offsets_and_vz
 from cosmoglint.sampling.from_halo import flatten_and_mask_generated
 
@@ -178,22 +178,31 @@ def create_data(args):
                 intensities.append(intensity)
 
             keys = ["intensity", "intensity_rsd"]
-            save_hdf5_intensity_data(intensities, args, keys, args.output_fname)
+            save_hdf5_data(
+                data_list = intensities, 
+                key_list = keys, 
+                fname = args.output_fname, 
+                args=args
+            )
 
         if args.output_catalog_fname is not None:
             print("# Generate catalog of galaxies")
             pos = pos_list[0]
-            data = [pos[:,0], pos[:,1], pos[:,2], sfr]
-            output_features = ["SubhaloPos", "SubhaloPos", "SubhaloPos", "SubhaloSFR"]
+            data_list = [pos[:,0], pos[:,1], pos[:,2], sfr]
+            output_features = ["SubhaloPos"] * 3 + ["SubhaloSFR"]
             
             if args.redshift_space:
-                data.append( vel_central[:,2] + vz )
+                data_list.append( vel_central[:,2] + vz )
                 output_features.append( "SubhaloVelZ" )
                 
-            data = np.stack(data, axis=0)
             mask = sfr > args.catalog_threshold
 
-            save_hdf5_catalog_data(data, args, output_features, args.output_catalog_fname)
+            save_hdf5_data(
+                data_list = data_list, 
+                key_list = output_features, 
+                fname = args.output_catalog_fname, 
+                args=args
+            )
 
     else:
         print("# Use original values in simulation data (7th column)")
@@ -221,7 +230,12 @@ def create_data(args):
             intensities.append(intensity)
 
         keys = ["intensity", "intensity_rsd"]
-        save_hdf5_intensity_data(intensities, args, keys, args.output_fname)
+        save_hdf5_data(
+            data_list = intensities, 
+            key_list = keys, 
+            fname = args.output_fname,
+            args = args,
+            )
 
 def add_spherical_offset_and_rsd(
     generated, 
