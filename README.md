@@ -86,7 +86,7 @@ Example `norm_param_file`:
 
 Example:
 ```bash
-python create_data_cube.py --input_fname [input_fname] --model_dir [model_dir] 
+python create_dc.py --input_fname [input_fname] --model_dir [model_dir] 
 ```
 
 ### Options:
@@ -105,7 +105,7 @@ python create_data_cube.py --input_fname [input_fname] --model_dir [model_dir]
 
 Example:
 ```bash
-python create_lightcone.py --input_fname [input_fname] --model_dir [model_dir] --model_config_file [model_config_file]
+python create_lc.py --input_fname [input_fname] --model_dir [model_dir] --model_config_file [model_config_file]
 ```
 
 Example of `model_config_file`:
@@ -143,9 +143,9 @@ The following options are required if if `output_fname` is defined
 
 Example Jupyter notebooks are available in the `notebooks/` directory:
 
-- `quick_check_halo.ipynb`, `quick_check_mesh.ipynb`: For quick look at training results 
-- `gen_analysis_halo.ipynb`, `gen_analysis_mesh.ipynb`: Visualize and analyse created data
-- `gen_analysis_lightcone_halo.ipynb`: Visualize and analyse created light cone data
+- `check_halo.ipynb`, `check_mesh.ipynb`: For quick look at training results 
+- `view_halo.ipynb`, `view_mesh.ipynb`: Visualize and analyse created data
+- `view_lightcone_halo.ipynb`: Visualize and analyse created light cone data
 
 ## Citation
 

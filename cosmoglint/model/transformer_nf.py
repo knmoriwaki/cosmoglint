@@ -109,9 +109,11 @@ def transformer_nf_model(args, **kwargs):
     return model, flow
     
 
+# ============================================================
+# Loss calculation
+# ============================================================
 
-def calculate_transformer_nf_loss(transformer, flow, batch, stop=None, stop_predictor=None):
-    device = next(transformer.parameters()).device
+def calculate_transformer_nf_loss(transformer, flow, batch, device="cpu", stop=None, stop_predictor=None):
 
     condition = batch["condition"].to(device)
     seq = batch["target"].to(device)

@@ -19,10 +19,10 @@ from astropy.cosmology import FlatLambdaCDM
 cosmo = FlatLambdaCDM(H0=67.74, Om0=0.3089)
 import astropy.units as u
 
+from cosmoglint.utils.io_utils import load_global_params
 from cosmoglint.utils.cosmology_utils import ckpc_to_arcsec, dckpc_to_dz
-from cosmoglint.utils.misc import spherical_offsets_and_vz
+from cosmoglint.utils.misc import get_feature_values, spherical_offsets_and_vz
 from cosmoglint.sampling.from_halo import flatten_and_mask_generated
-
 
 cspeed = 3e10  # [cm/s]
 
@@ -43,7 +43,6 @@ def parse_args():
 
     ### Output format parameters
     parser.add_argument("--redshift_space", action="store_true", default=False, help="Use redshift space")
-    parser.add_argument("--gen_both", action="store_true", default=False, help="Generate both real and redshift space data")
 
     parser.add_argument("--redshift_min", type=float, default=0.0, help="Minimum redshift")
     parser.add_argument("--redshift_max", type=float, default=6.0, help="Maximum redshift")
@@ -86,7 +85,6 @@ def generate_galaxies_in_multiple_redshifts(
         opt = json.load(f, object_hook=lambda d: argparse.Namespace(**d))
 
     if args.global_param_file is not None:
-        from cosmoglint.utils.io_utils import load_global_params
         global_params = load_global_params(args.global_param_file, opt.global_features)[args.global_param_id] 
     else:
         global_params = None
@@ -132,9 +130,6 @@ def generate_galaxies_in_multiple_redshifts(
             from cosmoglint.sampling import sample_galaxies
             generated, mask = sample_galaxies(opt, x_now, global_params=global_params, verbose=False)
             
-        seq_length = mask.shape[1]
-        num_features = generated.shape[-1]
-
         # flatten and mask
         out = flatten_and_mask_generated(
             generated,
@@ -167,9 +162,6 @@ def create_lightcone(args):
     print("# area : {:.4f} arcsec x {:.4f} arcsec".format(args.side_length, args.side_length))
     print("# angular resolution : {:.4f} arcsec".format(args.angular_resolution))
 
-    if args.gen_both:
-        NotImplementedError("Generating both real and redshift space data is not implemented yet.")
-
     ### Load data ###
 
     mass, pos_x, pos_y, redshift_obs, redshift_real = load_lightcone_data(args.input_fname, cosmo=cosmo)
@@ -182,10 +174,7 @@ def create_lightcone(args):
         pos_y += radius / np.sqrt(2)
         print("# Shift positions -- new max pos: ({:.4f}, {:.4f})".format(pos_x.max(), pos_y.max()))
 
-    if args.redshift_space:
-        print("# Using redshift space")
-    else:
-        print("# Using real space")
+    if not args.redshift_space:
         redshift_obs = copy.deepcopy(redshift_real)
 
     mask = (np.log10(mass) + 10 > args.logm_min)
@@ -195,7 +184,7 @@ def create_lightcone(args):
     pos_x = pos_x[mask]
     pos_y = pos_y[mask]
     redshift_real = redshift_real[mask]
-    redshift_obs = redshift_obs[mask] # Observed redshift if redshift_space is True, otherwise equals to redshift_real
+    redshift_obs = redshift_obs[mask] 
 
     pos = np.stack([pos_x, pos_y, redshift_obs], axis=1) # (num_halos, 3)
 
@@ -213,27 +202,14 @@ def create_lightcone(args):
     with open("{}/args.json".format(args.model_dir), "r") as f:
         opt = json.load(f, object_hook=lambda d: argparse.Namespace(**d))
 
-    i_dist = opt.output_features.index("SubhaloDist")
-    distance = generated[:,i_dist]
-    distance_arcsec = ckpc_to_arcsec(distance, redshift_central, cosmo=cosmo, l_with_hlittle=True)
-    distance_z = dckpc_to_dz(distance, redshift_central, cosmo=cosmo, l_with_hlittle=True)
-
-    if args.redshift_space:
-        i_vr = opt.output_features.index("SubhaloVrad")
-        i_vt = opt.output_features.index("SubhaloVtan")
-        vr = generated[:,i_vr]
-        vt = generated[:,i_vt]
-        offset, vz = spherical_offsets_and_vz(distance_arcsec, distance_z=distance_z, vr=vr, vt=vt, flag_central=flag_central)
-
-        pos_galaxies = pos_central + offset
-
-        beta = vz / (cspeed * 100) # [(km/s) / (km/s)]
-        redshift_rest = pos_galaxies[:,2]
-        pos_galaxies[:,2] = ( 1. + redshift_rest ) * np.sqrt( (1. + beta) / (1. - beta) ) - 1.0
-
-    else:
-        offset, _ = spherical_offsets_and_vz(distance_arcsec, distance_z=distance_z)
-        pos_galaxies = pos_central + offset
+    pos_galaxies = add_spherical_offset_and_rsd(
+        generated = generated,
+        pos_central = pos_central,
+        redshift_central = redshift_central,
+        flag_central = flag_central,
+        output_features = opt.output_features, 
+        redshift_space = args.redshift_space
+    )
 
     print(f"# Elapsed time: {time.time() - time_start} sec")
 
@@ -265,7 +241,6 @@ def create_lightcone(args):
     if args.output_catalog_fname is not None:
 
         ### Generate catalog ###
-
         mask = (generated[:,0] > args.catalog_threshold)
         pos_galaxies = pos_galaxies[mask]
         redshift = redshift_central[mask]
@@ -285,6 +260,40 @@ def create_lightcone(args):
                 f.create_dataset(key, data=generated[:,iparam], compression="gzip")
         
         print("Galaxy catalog saved to {}".format(args.output_fname))
+
+
+def add_spherical_offset_and_rsd(
+    generated, 
+    pos_central, 
+    redshift_central, 
+    flag_central, 
+    output_features = [],
+    redshift_space = False
+):
+    
+    distance = get_feature_values(generated, output_features, "SubhaloDist")
+    vr = get_feature_values(generated, output_features, "SubhaloVrad")
+    vt = get_feature_values(generated, output_features, "SubhaloVtan")
+
+    distance_arcsec = ckpc_to_arcsec(distance, redshift_central, cosmo=cosmo, l_with_hlittle=True)
+    distance_z = dckpc_to_dz(distance, redshift_central, cosmo=cosmo, l_with_hlittle=True)
+
+    offset, vz = spherical_offsets_and_vz(
+        distance_arcsec, 
+        distance_z = distance_z, 
+        vr = vr, 
+        vt = vt, 
+        flag_central=flag_central
+    )
+
+    pos_galaxies = pos_central + offset
+
+    if redshift_space:
+        beta = vz / (cspeed * 100) # [(km/s) / (km/s)]
+        redshift_rest = pos_galaxies[:,2]
+        pos_galaxies[:,2] = ( 1. + redshift_rest ) * np.sqrt( (1. + beta) / (1. - beta) ) - 1.0
+
+    return pos_galaxies
 
 
 def load_lightcone_data(input_fname, cosmo):

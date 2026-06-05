@@ -69,6 +69,74 @@ def transformer_model(cfg, **kwargs):
 
     return model
 
+
+
+# ============================================================
+# Loss calculation
+# ============================================================
+
+def calculate_transformer_loss(model, batch, weight=None, device="cpu"):
+    """
+    Compute the loss for one batch.
+    
+    Parameters
+    ----------
+    model : torch.nn.Module
+        Model used to compute predictions or log-probabilities.
+    batch : dict
+        Mini-batch returned by the dataloader.
+    device : torch.device or str, optional
+        Device used for tensors created inside this function.
+
+    Returns
+    -------
+    loss : torch.Tensor
+        Scalar loss tensor used for backpropagation.
+    """
+
+    import torch.nn.functional as F
+
+    seq = batch["target"].to(device)    # (batch, max_length, num_features_in)
+    mask = batch["mask"].to(device)   # (batch, max_length)
+    condition = batch["condition"]
+    if isinstance(condition, dict):
+        condition = {k: v.to(device) for k, v in condition.items()}
+    else:
+        condition = condition.to(device)
+    global_cond = batch["global_cond"].to(device) # (batch, num_features_global)
+    
+    input_seq = seq[:, :-1]
+    target = seq
+
+    output = model(condition, input_seq, global_cond=global_cond) # (batch, max_length, num_features_in, num_features_out)
+    #_, output = model.generate(condition, seq=seq, teacher_forcing_ratio=teacher_forcing_ratio) 
+    # output: (batch, max_length, num_features_in, num_features_out)
+
+    num_features_out = output.shape[-1]
+
+    if weight is None:
+        weight = torch.ones_like(target, dtype=torch.float32, device=target.device) # (batch, seq_length)
+
+    weight = mask * weight
+
+    log_prob = torch.log( output + 1e-8 )
+    target_bins = (target * num_features_out).long() # (batch, seq_length, num_features_in) [0, 1] -> [0, num_features_out-1]
+    target_bins = torch.clamp(target_bins, min=0, max=num_features_out - 1)
+
+    log_prob_flatten = log_prob.contiguous().view(-1, num_features_out) # (batch * seq_length * num_features_in, num_features_out)
+    target_bins_flatten = target_bins.contiguous().view(-1) # (batch * seq_length * num_features_in, )
+    weight_flatten = weight.contiguous().view(-1) # (batch * seq_length * num_features_in, )
+
+    loss_nll = F.nll_loss(log_prob_flatten, target_bins_flatten, reduction='none') 
+    loss = (loss_nll * weight_flatten).sum() / ( (weight_flatten).sum() + 1e-8 )
+
+    return loss
+
+# ============================================================
+# Model base
+# ============================================================
+
+
 class TransformerBase(nn.Module):
     def __init__(
             self, 
@@ -231,6 +299,10 @@ class TransformerBase(nn.Module):
 
         return generated, x
 
+
+# ============================================================
+# Models
+# ============================================================
 
 class Transformer1(TransformerBase): # add logM at first in the sequence
     def __init__(
@@ -406,6 +478,9 @@ class Transformer2(TransformerBase): # embed condition and x together, and then 
 
         return x
 
+# ============================================================
+# Global conditioning
+# ============================================================
 
 class TransformerWithGlobalCond(nn.Module): 
     def __init__(
@@ -460,6 +535,10 @@ class TransformerWithGlobalCond(nn.Module):
         return self.transformer.generate(ctx, **kwargs)
 
     
+# ============================================================
+# For visualizing attention 
+# ============================================================
+
 from typing import Optional
 
 class TransformerDecoderLayerWithAttn(nn.TransformerDecoderLayer):
@@ -530,8 +609,9 @@ class Transformer2WithAttn(Transformer2):
 
 
 
-
-
+# ============================================================
+# Mesh-conditioned models
+# ============================================================
 
 ###### cross-attention #######
 class XAttnTransformer(TransformerBase): 

@@ -14,7 +14,7 @@ from torch.utils.data import random_split
 
 from cosmoglint.datasets import HaloDataset, MeshDataset, MeshCtxDataset
 from cosmoglint.utils.io_utils import load_global_params
-from cosmoglint.model.transformer import transformer_model
+
 
 def parse_args():
 
@@ -38,15 +38,18 @@ def parse_args():
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--dropout", type=float, default=0.0)
 
+    parser.add_argument("--lambda_stop", type=float, default=1, help="weight for stop prediction loss. Used when")
+    parser.add_argument("--hidden_dim_stop", type=int, default=64, help="hidden dimension of stop predictor")
+
+
+    parser.add_argument("--save_freq", type=int, default=100)
+
+    # sampler parameters
     parser.add_argument("--sampler_xmin", type=float, default=0)
     parser.add_argument("--sampler_xmax", type=float, default=1)
     parser.add_argument("--sampler_weight_min", type=float, default=1, help="Minimum weight for the sampler, set to 1 to disable sampling")
 
-    parser.add_argument("--save_freq", type=int, default=100)
-
     return parser.parse_args()
-
-
 
 
 def train_model(args):
@@ -69,15 +72,64 @@ def train_model(args):
     for k, v in vars(args).items():
         print(f"{k}: {v}")
 
-    ### Define model ###
-    
+    def my_print(log):
+        if args.show_pbar:
+            tqdm.write(log)
+        else:
+            print(log)
+
     args.num_features_cond = len(args.input_features)
     args.num_features_in = len(args.output_features)
     args.num_features_global = 0 if args.global_features is None else len(args.global_features)
+            
+    ### Define model ###
     
-    model = transformer_model(args)
-    model.to(device)
-    print(model)
+    if hasattr(args, "num_flows"):
+        print("# Use Transformer + NF model")
+        from cosmoglint.model.transformer_nf import transformer_nf_model, calculate_transformer_nf_loss
+        
+        model, flow = transformer_nf_model(args)
+        model.to(device)
+        flow.to(device)        
+        print(model)
+        print(flow)
+        model_parameters = list(model.parameters()) + list(flow.parameters()) 
+
+        def calc_loss(batch):
+            return calculate_transformer_nf_loss(model, flow, batch, device=device)
+
+        def save_model(epoch):
+            fname = "{}/model_ep{:d}.pth".format(args.output_dir, epoch+1)
+            torch.save(model.state_dict(), fname)
+            my_print("# Model saved to {}".format(fname))
+
+            fname = "{}/flow_ep{:d}.pth".format(args.output_dir, epoch+1)
+            torch.save(flow.state_dict(), fname)
+            my_print("# Model saved to {}".format(fname))
+
+            fname = "{}/model.pth".format(args.output_dir)
+            torch.save(model.state_dict(), fname)
+
+            fname = "{}/flow.pth".format(args.output_dir)
+            torch.save(flow.state_dict(), fname)
+    else:
+        from cosmoglint.model.transformer import transformer_model, calculate_transformer_loss
+        
+        model = transformer_model(args)
+        model.to(device)
+        print(model)
+        model_parameters = model.parameters()
+
+        def calc_loss(batch):
+            return calculate_transformer_loss(model, batch, device=device)
+
+        def save_model(epoch=None):
+            fname = "{}/model_ep{:d}.pth".format(args.output_dir, epoch+1)
+            torch.save(model.state_dict(), fname)
+            my_print("# Model saved to {}".format(fname))
+
+            fname = "{}/model.pth".format(args.output_dir)
+            torch.save(model.state_dict(), fname)
     
     ### Load data ###
 
@@ -87,6 +139,7 @@ def train_model(args):
     
     with open(args.norm_param_file) as f:
         norm_param_dict = json.load(f)
+
     args.norm_param_dict = norm_param_dict
     fname = "{}/args.json".format(args.output_dir)
     with open(fname, "w") as f:
@@ -95,11 +148,10 @@ def train_model(args):
 
     ### Training ###
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-5)
+    optimizer = torch.optim.Adam(model_parameters, lr=args.lr, weight_decay=1e-5)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.num_epochs, eta_min=1e-6)
 
     fname_log = "{}/log.txt".format(args.output_dir)
-
     with open(fname_log, "w") as f:
         f.write(f"# loss loss_val\n")
 
@@ -110,21 +162,21 @@ def train_model(args):
             elist = tqdm(elist, file=sys.stderr)
             
         for epoch in elist:
-            model.train()
 
             for count, batch in enumerate(train_dataloader):
-                optimizer.zero_grad()
-                loss = calc_loss(model, batch, device=device) #, weight=weight)
-
-                loss.backward()
-                optimizer.step()
-
                 model.eval()
                 for batch_val in val_dataloader:
                     with torch.no_grad():
-                        loss_val = calc_loss(model, batch_val, device=device)
+                            
+                        loss_val = calc_loss(batch_val)
                         break # show one batch result only
                 model.train()
+
+                optimizer.zero_grad()
+                loss = calc_loss(batch) #, weight=weight)
+
+                loss.backward()
+                optimizer.step()
 
                 ### Write log ###
                 epoch_now = epoch + count / num_batches
@@ -135,77 +187,7 @@ def train_model(args):
             
             ### Save model ###
             if (epoch + 1) % args.save_freq == 0 or epoch + 1 == args.num_epochs: 
-                fname = "{}/model_ep{:d}.pth".format(args.output_dir, epoch+1)
-                torch.save(model.state_dict(), fname)
-                if args.show_pbar:
-                    tqdm.write("# Model saved to {}".format(fname))
-                else:
-                    print("# Model saved to {}".format(fname))
-
-                fname = "{}/model.pth".format(args.output_dir)
-                torch.save(model.state_dict(), fname)
-
-
-# ============================================================
-# Loss calculation
-# ============================================================
-
-def calc_loss(model, batch, weight=None, device="cpu"):
-    """
-    Compute the loss for one batch.
-    
-    Parameters
-    ----------
-    model : torch.nn.Module
-        Model used to compute predictions or log-probabilities.
-    batch : dict
-        Mini-batch returned by the dataloader.
-    device : torch.device or str, optional
-        Device used for tensors created inside this function.
-
-    Returns
-    -------
-    loss : torch.Tensor
-        Scalar loss tensor used for backpropagation.
-    """
-
-    import torch.nn.functional as F
-
-    seq = batch["target"].to(device)    # (batch, max_length, num_features_in)
-    mask = batch["mask"].to(device)   # (batch, max_length)
-    condition = batch["condition"]
-    if isinstance(condition, dict):
-        condition = {k: v.to(device) for k, v in condition.items()}
-    else:
-        condition = condition.to(device)
-    global_cond = batch["global_cond"].to(device) # (batch, num_features_global)
-    
-    input_seq = seq[:, :-1]
-    target = seq
-
-    output = model(condition, input_seq, global_cond=global_cond) # (batch, max_length, num_features_in, num_features_out)
-    #_, output = model.generate(condition, seq=seq, teacher_forcing_ratio=teacher_forcing_ratio) 
-    # output: (batch, max_length, num_features_in, num_features_out)
-
-    num_features_out = output.shape[-1]
-
-    if weight is None:
-        weight = torch.ones_like(target, dtype=torch.float32, device=target.device) # (batch, seq_length)
-
-    weight = mask * weight
-
-    log_prob = torch.log( output + 1e-8 )
-    target_bins = (target * num_features_out).long() # (batch, seq_length, num_features_in) [0, 1] -> [0, num_features_out-1]
-    target_bins = torch.clamp(target_bins, min=0, max=num_features_out - 1)
-
-    log_prob_flatten = log_prob.contiguous().view(-1, num_features_out) # (batch * seq_length * num_features_in, num_features_out)
-    target_bins_flatten = target_bins.contiguous().view(-1) # (batch * seq_length * num_features_in, )
-    weight_flatten = weight.contiguous().view(-1) # (batch * seq_length * num_features_in, )
-
-    loss_nll = F.nll_loss(log_prob_flatten, target_bins_flatten, reduction='none') 
-    loss = (loss_nll * weight_flatten).sum() / ( (weight_flatten).sum() + 1e-8 )
-
-    return loss
+                save_model(epoch)
 
 
 # ============================================================

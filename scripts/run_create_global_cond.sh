@@ -24,9 +24,11 @@ do
         
         input_fname=${base_dir}/TNG300-1/TNG300-1_${snapshot_number_TNG}.h5
 
-        output_catalog_fname=$output_dir/group.data_cube.${snapshot_number_TNG}.TNG300-1_test${global_param_id}.threshold${threshold}.${model_name}.seed${seed}.h5
+        o_base=${snapshot_number_TNG}.TNG300-1_test${global_param_id}.threshold${threshold}.${model_name}.seed${seed}
+        output_fname=$output_dir/group.data_cube.${o_base}.h5
+        output_catalog_fname=$output_dir/group.catalog.${o_base}.txt
 
-        python3 create_data_cube.py --boxsize 25000 --npix 128 --npix_z 128 --threshold $threshold --gpu_id $gpu_id --prob_threshold 1e-5 --input_fname $input_fname --output_catalog_fname  $output_catalog_fname --model_dir $model_dir --seed $seed --global_param_file $global_param_file --global_param_id $global_param_id 
+        python3 create_dc.py --boxsize 25000 --npix 128 --npix_z 128 --threshold $threshold --gpu_id $gpu_id --prob_threshold 1e-5 --input_fname $input_fname --output_fname $output_fname --output_catalog_fname  $output_catalog_fname --model_dir $model_dir --seed $seed --global_param_file $global_param_file --global_param_id $global_param_id --batch_size 128
     done
     seed=$(( seed + 1 ))
 done
@@ -43,9 +45,11 @@ do
         
         input_fname=${base_dir}/CAMELS/IllustrisTNG/LH/LH_${global_param_id}/my_groups_0${snapshot_number}.hdf5
 
-        output_catalog_fname=$output_dir/group.data_cube.${snapshot_number}.LH${global_param_id}.threshold${threshold}.${model_name}.seed${seed}.h5
+        o_base=${snapshot_number}.LH${global_param_id}.threshold${threshold}.${model_name}.seed${seed}
+        output_fname=$output_dir/group.data_cube.${o_base}.h5
+        output_catalog_fname=$output_dir/group.catalog.${o_base}.txt
 
-        #python3 create_data_cube.py --boxsize 25000 --npix 128 --npix_z 128 --threshold $threshold --gpu_id $gpu_id --prob_threshold 1e-5 --input_fname $input_fname --output_catalog_fname  $output_catalog_fname --model_dir $model_dir --seed $seed --global_param_file $global_param_file --global_param_id $global_param_id
+        #python3 create_dc.py --boxsize 25000 --npix 128 --npix_z 128 --threshold $threshold --gpu_id $gpu_id --prob_threshold 1e-5 --input_fname $input_fname --output_catalog_fname  $output_catalog_fname --model_dir $model_dir --seed $seed --global_param_file $global_param_file --global_param_id $global_param_id
         global_param_id=$(( global_param_id + 1 ))
     done
     seed=$(( seed + 1 ))

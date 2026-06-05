@@ -24,7 +24,7 @@ args_catalog="$args --gen_catalog --catalog_threshold 1"
 
 ### Subgroup data
 input_fname=${base_dir}/${sim_name}/subgroup.${snapshot_number}.txt
-#python3 create_data_cube.py $args_catalog --input_fname $input_fname --output_catalog_fname $output_dir/subgroup.${label}.cat.txt 
+#python3 create_dc.py $args_catalog --input_fname $input_fname --output_catalog_fname $output_dir/subgroup.${label}.cat.txt 
 
 
 #################
@@ -33,16 +33,16 @@ input_fname=${base_dir}/${sim_name}/subgroup.${snapshot_number}.txt
 
 ### group data ###
 input_fname=${base_dir}/${sim_name}/group.${snapshot_number}.txt
-python3 create_data_cube.py $args --input_fname $input_fname --output_catalog_fname $output_dir/group.${label}.h5
+python3 create_dc.py $args --input_fname $input_fname --output_catalog_fname $output_dir/group.${label}.h5
 
 ### subgroup data ###
 input_fname=${base_dir}/${sim_name}/subgroup.${snapshot_number}.txt
-python3 create_data_cube.py $args --input_fname $input_fname --output_catalog_fname $output_dir/subgroup.${label}.h5 
+python3 create_dc.py $args --input_fname $input_fname --output_catalog_fname $output_dir/subgroup.${label}.h5 
 
 ### subgroup data with shuffling ###
 input_fname=${base_dir}/${sim_name}/subgroup_shuffled.${snapshot_number}.txt
-#python3 create_data_cube.py $args --input_fname $input_fname --output_catalog_fname $output_dir/subgroup_shuffled.${label}.h5 
+#python3 create_dc.py $args --input_fname $input_fname --output_catalog_fname $output_dir/subgroup_shuffled.${label}.h5 
 
 ### subgroup at the last corner
 input_fname=${base_dir}/${sim_name}/subgroup.${snapshot_number}.txt
-#python3 create_data_cube.py $args --input_fname $input_fname --outputcatalog_fname $output_dir/subgroup.${label}.0.25box.h5 --boxsize_to_use 51.25
+#python3 create_dc.py $args --input_fname $input_fname --outputcatalog_fname $output_dir/subgroup.${label}.0.25box.h5 --boxsize_to_use 51.25
