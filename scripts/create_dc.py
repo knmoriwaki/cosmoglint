@@ -83,24 +83,24 @@ def create_data(args):
     dx_pix = args.boxsize_to_use / npix
 
     ### Load data
-    redshift, mass, pos, vel, sfr = get_z_m_p_v_s(args.input_fname)
-    mass *= args.mass_correction_factor
+    redshift, halo_data = get_z_m_p_v_s(args.input_fname)
+    halo_data[:,0] *= args.mass_correction_factor
 
-    print("# Minimum log mass in catalog [Msun]: {:.5f}".format(np.min(np.log10(mass))))
-    print("# Maximum log mass in catalog [Msun]: {:.5f}".format(np.max(np.log10(mass))))
+    print("# Minimum log mass in catalog [Msun]: {:.5f}".format(np.min(np.log10(halo_data[:,0])+10)))
+    print("# Maximum log mass in catalog [Msun]: {:.5f}".format(np.max(np.log10(halo_data[:,0])+10)))
     print("# Use halos with log mass [Msun] > {}".format(args.logm_min))
-    mask = (np.log10(mass) + 10 > args.logm_min)
-    
+    mask = (np.log10(halo_data[:,0]) + 10 > args.logm_min)
+
+    ### Mask data    
     if args.boxsize_to_use < args.boxsize:
         print("# Use a volume at the last corner -- new boxsize: {:.3f}".format(args.boxsize_to_use))
     xmin = args.boxsize - args.boxsize_to_use
-    pos = pos - xmin
-    mask = mask & (pos > 0).all(axis=-1)
-    
-    mass = mass[mask]
-    cond = mass[:, None]
-    pos = pos[mask]
-    vel = vel[mask] if args.redshift_space else None
+    mask = mask & (halo_data[:,1:4] > xmin).all(axis=-1)
+    halo_data = halo_data[mask]
+
+    cond = halo_data[:, 0:1] # (nhalo, 1)
+    pos = halo_data[:,1:4] - xmin
+    vel = halo_data[:,4:7] if args.redshift_space else None
 
     print(f"# Redshift: {redshift}")
 
@@ -161,6 +161,7 @@ def create_data(args):
             pos_central = pos_central,
             vel_central = vel_central,
             flag_central = flag_central,
+            redshift = redshift,
             output_features = opt.output_features,
             redshift_space = args.redshift_space
         )
@@ -173,7 +174,7 @@ def create_data(args):
             
             intensities = []
             for pos in pos_list:
-                intensity = make_intensity_map(pos, sfr)
+                intensity = make_intensity_map(pos, sfr, npix, dx_pix)
                 intensities.append(intensity)
 
             keys = ["intensity", "intensity_rsd"]
@@ -199,13 +200,13 @@ def create_data(args):
         if args.output_fname is None:
             raise  ValueError("output_fname is not set. Please set it. Note that catalog data will not be created when using original values.")
 
-        value = sfr[mask]
+        sfr = halo_data[:,7]
 
         print("# Use galaxies with value > {}".format(args.threshold))
-        mask = value > args.threshold
+        mask = sfr > args.threshold
         pos = pos[mask]
         vel = vel[mask]
-        value = value[mask]
+        sfr = sfr[mask]
 
         if args.redshift_space:
             pos_real = copy.deepcopy(pos)
@@ -258,12 +259,16 @@ def get_z_m_p_v_s(input_fname):
 
     if input_fname.endswith(".hdf5") or input_fname.endswith(".h5"):
         with h5py.File(args.input_fname, "r") as f:
-            print(f["Group"].keys())
             redshift = f["Header"].attrs["Redshift"]
             mass = f["Group/GroupMass"][:] #[1e10 Msun/h]
             pos = f["Group/GroupPos"][:] # [kpc/h]
             vel = f["Group/GroupVel"][:] if "Group/GroupVel" in f else None # [km/s]
-            sfr = None
+        
+        if vel is None:
+            res = np.concatenate([mass[:,None],pos], axis=1)
+        else:
+            res = np.concatenate([mass[:,None],pos,vel], axis=1)
+
                 
     elif "pinocchio" in input_fname:
         match = re.search(r'pinocchio\.([0-9]+\.[0-9]+)', input_fname)
@@ -275,7 +280,8 @@ def get_z_m_p_v_s(input_fname):
         mass = mycat.data["Mass"] / 1e10 # [1e10 Msun/h]
         pos = mycat.data["pos"]
         vel = mycat.data["vel"]
-        sfr = None
+        
+        res = np.concatenate([mass[:,None],pos,vel], axis=1)
     
     else:
         hlittle = cosmo.H(0).to(u.km/u.s/u.Mpc).value / 100.0 
@@ -284,18 +290,15 @@ def get_z_m_p_v_s(input_fname):
             first_line = f.readline().strip()
             tokens = first_line.split()
             redshift = float(tokens[1])
-        data = np.loadtxt(input_fname)
-        # Input data: logm, x, y, z, vx, vy, vz, value
+        res = np.loadtxt(input_fname)
+        # res: logm, x, y, z, vx, vy, vz, sfr
 
-        mass = 10 ** data[:, 0] / 1e10 * hlittle
-        pos = data[:, 1:4]
-        if args.redshift_space:
-            vel = data[:, 4:7]
-        sfr = 10 ** data[:,7]
+        res[:,0] = 10 ** res[:,1] / 1e10 * hlittle # mass
+        res[:,7] = 10 ** res[:,7] # sfr
 
-    return redshift, mass, pos, vel, sfr
+    return redshift, res
 
-def make_intensity_map(pos, flux, npix):
+def make_intensity_map(pos, flux, npix, dx_pix):
     if isinstance(npix, int):
         npix = (npix, npix, npix)
 

@@ -38,7 +38,7 @@ def spherical_offsets_and_vz(distance, distance_z=None, vr=None, vt=None, flag_c
     cos_theta = np.random.uniform(-1, 1, size=num_gal)
     sin_theta = np.sqrt(1 - cos_theta ** 2)    
 
-    offset = np.zeros(num_gal, 3)
+    offset = np.zeros((num_gal, 3))
     offset[:,0] = distance * sin_theta * np.cos(phi)
     offset[:,1] = distance * sin_theta * np.sin(phi)
     offset[:,2] = distance_z * cos_theta

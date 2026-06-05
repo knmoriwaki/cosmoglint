@@ -28,7 +28,7 @@ do
         output_fname=$output_dir/group.data_cube.${o_base}.h5
         output_catalog_fname=$output_dir/group.catalog.${o_base}.txt
 
-        python3 create_dc.py --boxsize 25000 --npix 128 --npix_z 128 --threshold $threshold --gpu_id $gpu_id --prob_threshold 1e-5 --input_fname $input_fname --output_fname $output_fname --output_catalog_fname  $output_catalog_fname --model_dir $model_dir --seed $seed --global_param_file $global_param_file --global_param_id $global_param_id --batch_size 128
+        python3 create_dc.py --boxsize 205000 --npix 128 --npix_z 128 --threshold $threshold --gpu_id $gpu_id --prob_threshold 1e-5 --input_fname $input_fname --output_fname $output_fname --output_catalog_fname  $output_catalog_fname --model_dir $model_dir --seed $seed --global_param_file $global_param_file --global_param_id $global_param_id --batch_size 128
     done
     seed=$(( seed + 1 ))
 done
@@ -38,7 +38,7 @@ done
 seed=0
 while [ $seed -lt 1 ]
 do
-    global_param_id=910
+    global_param_id=998
     while [ $global_param_id -lt 1000 ]
     do
         global_param_file=${base_dir}/CAMELS/IllustrisTNG/CosmoAstroSeed_IllustrisTNG_L25n256_LH.txt
