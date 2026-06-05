@@ -32,7 +32,7 @@ do
     output_fname=$output_dir/${output_prefix}.seed${seed}.h5
     output_catalog_fname=$output_dir/${output_catalog_prefix}.seed${seed}.h5
 
-    python3 create_dc_mesh.py --gpu_id $gpu_id --npix_to_use $npix_to_use --npix $npix_to_use --npix_z $npix_to_use --threshold $threshold  --prob_threshold 1e-5 --input_fname $input_fname --output_fname $output_fname --output_catalog_fname $output_catalog_fname --model_dir $model_dir --seed $seed  --num_rounds $num_rounds #--monotonicity_start_index 0
+    python3 create_mesh.py --gpu_id $gpu_id --npix_to_use $npix_to_use --npix $npix_to_use --npix_z $npix_to_use --threshold $threshold  --prob_threshold 1e-5 --input_fname $input_fname --output_fname $output_fname --output_catalog_fname $output_catalog_fname --model_dir $model_dir --seed $seed  --num_rounds $num_rounds #--monotonicity_start_index 0
     
     seed=$(( seed + 1 ))
 done

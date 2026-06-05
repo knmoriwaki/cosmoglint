@@ -86,7 +86,7 @@ Example `norm_param_file`:
 
 Example:
 ```bash
-python create_dc.py --input_fname [input_fname] --model_dir [model_dir] 
+python create.py --input_fname [input_fname] --model_dir [model_dir] 
 ```
 
 ### Options:
